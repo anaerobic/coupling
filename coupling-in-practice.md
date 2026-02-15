@@ -10,75 +10,165 @@
 
 ## Scenario 1: The Distributed Monolith
 
-The most common anti-pattern in microservices: high integration strength + high distance = tight coupling.
+A distributed monolith is the result of splitting a monolith into multiple services that are **heavily dependent on each other** without adopting the patterns needed for distributed systems. You lose the simplicity of a monolith but gain none of the benefits of independent microservices. The hallmarks: services call each other synchronously in tangled webs, most share the same database, business logic and domain knowledge are spread across service boundaries, and changes to one service routinely break or require redeployment of others.
 
 ### ELI5
 
-> 🍕 **Imagine three pizza shops that share the same oven.**
+> 🏘️ **Imagine five houses that share the same plumbing, electrical, and heating systems.**
 >
-> They're separate restaurants (high distance), but they all depend on the same oven schedule (high integration strength). If the oven breaks or the schedule changes, ALL three shops stop working. You've got three shops but none of the benefits of being separate.
+> They look like separate houses (separate deployments), but if you flush a toilet in House A, the water pressure drops in House C. If House B's heater breaks, Houses D and E go cold too. Every renovation requires a plumber to visit all five houses because the pipes don't stop at the walls. You have five mortgages but none of the independence of actually living separately.
 
 ### Architecture — Before
 
 ```mermaid
 flowchart TD
-    subgraph services ["Three 'Microservices'"]
+    subgraph services ["Five 'Microservices'"]
         OS[Order Service]
         PS[Payment Service]
+        CS[Customer Service]
+        IS[Inventory Service]
         SS[Shipping Service]
     end
     
-    OS -->|"Reads user data"| DB[(Shared Database)]
-    PS -->|"Reads order data"| DB
-    SS -->|"Reads payment status"| DB
-    OS -->|"Writes orders"| DB
-    PS -->|"Writes payments"| DB
-    SS -->|"Writes shipments"| DB
+    OS -->|"Sync HTTP"| PS
+    OS -->|"Sync HTTP"| CS
+    OS -->|"Sync HTTP"| IS
+    PS -->|"Sync HTTP"| CS
+    PS -->|"Sync HTTP"| OS
+    SS -->|"Sync HTTP"| OS
+    SS -->|"Sync HTTP"| IS
+    IS -->|"Sync HTTP"| CS
+    
+    OS -->|"Read/Write"| DB[(Shared Database)]
+    PS -->|"Read/Write"| DB
+    CS -->|"Read/Write"| DB
+    IS -->|"Read/Write"| DB
+    SS -->|"Read/Write"| DB
     
     style DB fill:#ff6b6b,color:#fff
+    style OS fill:#ffa8a8,color:#000
+    style PS fill:#ffa8a8,color:#000
+    style CS fill:#ffa8a8,color:#000
+    style IS fill:#ffa8a8,color:#000
+    style SS fill:#ffa8a8,color:#000
 ```
+
+Notice the web of synchronous calls between services — every service knows about and directly calls multiple other services. This is the signature of a distributed monolith: the coupling topology of a monolith with the operational complexity of a distributed system.
+
+**What makes this a distributed monolith (not just "shared database"):**
+
+| Symptom | How it manifests |
+|---|---|
+| **Tangled service-to-service calls** | Services call each other directly and synchronously in both directions, forming circular dependency chains |
+| **Shared database** | All five services read from and write to the same tables — no data ownership boundaries |
+| **Scattered business logic** | Order validation logic lives partly in Order Service, partly in Payment Service, and partly in Inventory Service |
+| **Coordinated deployments** | A schema change or API change in Customer Service forces redeployment of all five services |
+| **Shared domain knowledge** | Every service knows the internal structure of Customer, Order, and Payment models |
+| **Distributed transactions** | Business operations span multiple services synchronously — if any one fails, manual rollback logic is scattered everywhere |
 
 **Coupling Analysis:**
 | Dimension | Value | Why |
 |---|---|---|
-| Integration Strength | 🔴 Intrusive | All services share database internals |
-| Distance | 🔴 High | Separate deployable services |
-| Volatility | 🔴 High | Core business domain |
-| **Verdict** | ❌ | **Distributed Monolith** |
+| Integration Strength | 🔴 Intrusive | Services share database internals, read/write each other's tables, and depend on internal models |
+| Distance | 🔴 High | Five separate deployable services with network boundaries |
+| Volatility | 🔴 High | Core business domain — order, payment, customer, inventory, shipping |
+| **Verdict** | ❌ | **Distributed Monolith** — all the complexity of distribution with none of the benefits |
 
-### TypeScript — Before: Shared database
+### TypeScript — Before: Tangled services with shared database
 
 ```typescript
 // ❌ order-service/src/order.service.ts
 import { Pool } from 'pg';
 
 export class OrderService {
-  constructor(private db: Pool) {} // shared database connection
+  constructor(private db: Pool) {} // same database connection as every other service
 
   async createOrder(req: CreateOrderRequest): Promise<Order> {
-    // Directly reads from payment service's tables!
+    // ❌ Directly reads from CUSTOMER service's tables
     const customer = await this.db.query(
-      `SELECT credit_limit, payment_method FROM customers WHERE id = $1`,
+      `SELECT id, name, credit_limit, loyalty_tier, email
+       FROM customers WHERE id = $1`,
       [req.customerId]
     );
 
-    // Directly reads from shipping service's tables!
-    const warehouse = await this.db.query(
-      `SELECT available_qty FROM inventory WHERE product_id = $1`,
+    // ❌ Directly reads from INVENTORY service's tables
+    const stock = await this.db.query(
+      `SELECT available_qty, warehouse_id FROM inventory WHERE product_id = $1`,
       [req.productId]
     );
 
+    // ❌ Business logic that belongs in Inventory Service
+    if (stock.rows[0].available_qty < req.quantity) {
+      throw new Error('Out of stock');
+    }
+
+    // ❌ Business logic that belongs in Customer/Payment Service
     if (customer.rows[0].credit_limit < req.total) {
       throw new Error('Credit limit exceeded');
     }
 
+    // ❌ Synchronous call to Payment Service — if it's down, orders break
+    const paymentResult = await fetch('http://payment-service:3002/charge', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerId: req.customerId,
+        amount: req.total,
+        // ❌ Passing internal payment details we shouldn't know about
+        paymentMethod: customer.rows[0].payment_method_id,
+      }),
+    });
+    if (!paymentResult.ok) throw new Error('Payment failed');
+
+    // ❌ Writes directly to shared tables
     const result = await this.db.query(
       `INSERT INTO orders (customer_id, product_id, qty, total, status)
        VALUES ($1, $2, $3, $4, 'pending') RETURNING *`,
       [req.customerId, req.productId, req.quantity, req.total]
     );
 
+    // ❌ Directly updates INVENTORY tables — not our data!
+    await this.db.query(
+      `UPDATE inventory SET available_qty = available_qty - $1 WHERE product_id = $2`,
+      [req.quantity, req.productId]
+    );
+
+    // ❌ Synchronous call to Shipping — if it's down, the order is half-created
+    await fetch('http://shipping-service:3004/shipments', {
+      method: 'POST',
+      body: JSON.stringify({
+        orderId: result.rows[0].id,
+        warehouseId: stock.rows[0].warehouse_id,
+        address: customer.rows[0].shipping_address,
+      }),
+    });
+
     return result.rows[0];
+  }
+}
+
+// ❌ payment-service/src/payment.service.ts
+// Payment service ALSO reaches into other services' data and logic
+export class PaymentService {
+  constructor(private db: Pool) {}
+
+  async chargeCustomer(req: ChargeRequest): Promise<PaymentResult> {
+    // ❌ Reads customer data directly — duplicates customer service's logic
+    const customer = await this.db.query(
+      `SELECT credit_limit, loyalty_tier FROM customers WHERE id = $1`,
+      [req.customerId]
+    );
+
+    // ❌ Discount logic that belongs in Order Service
+    const discount = customer.rows[0].loyalty_tier === 'gold' ? 0.1 : 0;
+    const finalAmount = req.amount * (1 - discount);
+
+    // ❌ Synchronous callback to Order Service to update status
+    await fetch('http://order-service:3001/orders/' + req.orderId + '/status', {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'payment_confirmed' }),
+    });
+
+    return { transactionId: 'txn_123', amount: finalAmount };
   }
 }
 ```
@@ -99,6 +189,18 @@ flowchart TD
         PS --> PDB
     end
     
+    subgraph Customer ["Customer Service"]
+        CSvc[Customer Logic]
+        CDB[(Customer DB)]
+        CSvc --> CDB
+    end
+    
+    subgraph Inventory ["Inventory Service"]
+        ISvc[Inventory Logic]
+        IDB[(Inventory DB)]
+        ISvc --> IDB
+    end
+    
     subgraph Shipping ["Shipping Service"]
         SS[Shipping Logic]
         SDB[(Shipping DB)]
@@ -107,10 +209,13 @@ flowchart TD
     
     OS -->|"OrderPlaced event"| EB{{Event Bus}}
     EB -->|"OrderPlaced"| PS
-    EB -->|"PaymentConfirmed"| SS
+    EB -->|"PaymentConfirmed"| ISvc
+    EB -->|"InventoryReserved"| SS
     PS -->|"PaymentConfirmed event"| EB
+    ISvc -->|"InventoryReserved event"| EB
     
     OS -.->|"HTTP: Check credit"| PS
+    OS -.->|"HTTP: Get customer"| CSvc
 ```
 
 **Coupling Analysis After:**
@@ -140,23 +245,38 @@ export interface PaymentConfirmedEvent {
   confirmedAt: string;
 }
 
+export interface InventoryReservedEvent {
+  type: 'InventoryReserved';
+  orderId: string;
+  warehouseId: string;
+  reservedAt: string;
+}
+
 // order-service/src/order.service.ts
 import { OrderPlacedEvent } from '@myorg/shared-contracts';
 
 export class OrderService {
   constructor(
-    private orderRepo: OrderRepository,    // own database
+    private orderRepo: OrderRepository,    // own database — only order tables
     private eventBus: EventBus,            // publish events
+    private customerClient: CustomerClient, // contract-based API call
     private paymentClient: PaymentClient   // contract-based API call
   ) {}
 
   async createOrder(req: CreateOrderRequest): Promise<Order> {
+    // ✅ Ask the customer service through its API (contract coupling)
+    const customer = await this.customerClient.getCustomer(req.customerId);
+    if (customer.status !== 'active') {
+      throw new Error('Customer is not active');
+    }
+
     // ✅ Ask the payment service through its API (contract coupling)
     const creditCheck = await this.paymentClient.checkCredit(req.customerId, req.total);
     if (!creditCheck.approved) {
       throw new Error('Credit check failed');
     }
 
+    // ✅ Only writes to OUR tables
     const order = await this.orderRepo.save({
       customerId: req.customerId,
       productId: req.productId,
@@ -165,7 +285,7 @@ export class OrderService {
       status: 'pending',
     });
 
-    // ✅ Publish event — payment & shipping subscribe independently
+    // ✅ Publish event — payment, inventory, shipping subscribe independently
     await this.eventBus.publish<OrderPlacedEvent>({
       type: 'OrderPlaced',
       orderId: order.id,
@@ -188,16 +308,40 @@ export class OrderPlacedHandler {
   ) {}
 
   async handle(event: OrderPlacedEvent): Promise<void> {
+    // ✅ Payment logic stays in the payment service
     const result = await this.paymentProcessor.charge(
       event.customerId,
       event.totalAmount
     );
 
+    // ✅ Publish result — Order Service reacts to this event
     await this.eventBus.publish<PaymentConfirmedEvent>({
       type: 'PaymentConfirmed',
       orderId: event.orderId,
       transactionId: result.transactionId,
       confirmedAt: new Date().toISOString(),
+    });
+  }
+}
+
+// inventory-service/src/handlers/payment-confirmed.handler.ts
+import { PaymentConfirmedEvent, InventoryReservedEvent } from '@myorg/shared-contracts';
+
+export class PaymentConfirmedHandler {
+  constructor(
+    private inventoryRepo: InventoryRepository, // own database — only inventory tables
+    private eventBus: EventBus
+  ) {}
+
+  async handle(event: PaymentConfirmedEvent): Promise<void> {
+    // ✅ Inventory logic stays in the inventory service
+    const reservation = await this.inventoryRepo.reserve(event.orderId);
+
+    await this.eventBus.publish<InventoryReservedEvent>({
+      type: 'InventoryReserved',
+      orderId: event.orderId,
+      warehouseId: reservation.warehouseId,
+      reservedAt: new Date().toISOString(),
     });
   }
 }
@@ -614,7 +758,245 @@ sequenceDiagram
 
 ---
 
-## Scenario 5: Hexagonal Architecture (Ports & Adapters)
+## Scenario 5: Service-Based Architecture
+
+A pragmatic middle ground between monolith and microservices. Mark Richards describes this as extracting a handful of **coarse-grained domain services** — typically 4 to 12 — that share a database (or a small number of databases), with each service owning its domain logic and its own tables. See [brownfield-strategies.md — Service-Based Architecture](brownfield-strategies.md#service-based-architecture) for migration strategies.
+
+### ELI5
+
+> 🏢 **Imagine a company in one office building.**
+>
+> A monolith is everyone in one giant open-plan room — accounting, engineering, sales, support, all shouting over each other. Microservices is giving every person their own building in different cities. **Service-based architecture** puts each department on its own floor. They have their own space (separate deployments), share the building (shared database), and take the elevator when they need to talk (internal API calls). Nobody reaches into another department's filing cabinets.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    GW[API Gateway]
+    
+    GW --> OS[Order Service]
+    GW --> CS[Customer Service]
+    GW --> IS[Inventory Service]
+    GW --> PS[Payment Service]
+    GW --> RS[Reporting Service]
+    
+    OS --> DB[(Shared Database)]
+    CS --> DB
+    IS --> DB
+    PS --> DB
+    RS --> DB
+    
+    OS -.->|"Internal API"| CS
+    OS -.->|"Internal API"| IS
+    OS -.->|"Internal API"| PS
+    
+    style OS fill:#4dabf7,color:#fff
+    style CS fill:#4dabf7,color:#fff
+    style IS fill:#4dabf7,color:#fff
+    style PS fill:#4dabf7,color:#fff
+    style RS fill:#4dabf7,color:#fff
+    style DB fill:#ffd43b,color:#000
+```
+
+**How this differs from a distributed monolith:**
+
+| | Distributed Monolith (Scenario 1) | Service-Based Architecture |
+|---|---|---|
+| **Database** | All services read/write all tables | Each service owns its tables; cross-service access goes through APIs |
+| **Service calls** | Tangled web of synchronous calls in every direction | Controlled, one-directional API calls between service boundaries |
+| **Business logic** | Scattered across multiple services | Each service owns all logic for its domain |
+| **Deployability** | Change one service → redeploy many | Each service deploys independently (schema changes require coordination) |
+| **Domain knowledge** | Every service knows internal models of other services | Services know only the API contracts of other services |
+
+### Coupling Analysis
+
+| Dimension | Value | Why |
+|---|---|---|
+| Integration Strength | 🟡 Model | Services share the database schema (model coupling), but each owns its tables |
+| Distance | 🟢 Low-Medium | Separate deployments but same infrastructure and shared database |
+| Volatility | 🟡 Medium | Core domains change independently but share data model |
+| **Verdict** | ✅ | **Pragmatic balance — less coupling than a monolith, far less overhead than microservices** |
+
+### TypeScript — Service-Based Architecture
+
+```typescript
+// order-service/src/order.service.ts
+// Coarse-grained domain service — owns order logic and ORDER tables only
+
+export class OrderService {
+  constructor(
+    private orderRepo: OrderRepository,        // own tables in shared DB
+    private customerApi: CustomerServiceClient, // internal HTTP call
+    private inventoryApi: InventoryServiceClient,
+    private paymentApi: PaymentServiceClient,
+  ) {}
+
+  async placeOrder(request: PlaceOrderRequest): Promise<Order> {
+    // ✅ Service boundary — call customer service's API, not its tables
+    const customer = await this.customerApi.getCustomer(request.customerId);
+    if (customer.status !== 'active') {
+      throw new Error(`Customer ${request.customerId} is not active`);
+    }
+
+    // ✅ Service boundary — call inventory service's API
+    const available = await this.inventoryApi.checkAvailability(
+      request.productId, request.quantity
+    );
+    if (!available) {
+      throw new Error(`Insufficient inventory for product ${request.productId}`);
+    }
+
+    // ✅ Service boundary — call payment service's API
+    const creditCheck = await this.paymentApi.checkCredit(
+      request.customerId, request.quantity * request.unitPrice
+    );
+    if (!creditCheck.approved) {
+      throw new Error('Credit check failed');
+    }
+
+    // ✅ Own domain logic stays local — only writes to ORDER tables
+    const order = await this.orderRepo.create({
+      customerId: request.customerId,
+      productId: request.productId,
+      quantity: request.quantity,
+      total: request.quantity * request.unitPrice,
+      status: 'confirmed',
+    });
+
+    // ✅ Reserve inventory via API (not by writing to inventory tables)
+    await this.inventoryApi.reserve(request.productId, request.quantity, order.id);
+
+    return order;
+  }
+}
+```
+
+### C# — Service-Based Architecture
+
+```csharp
+// OrderService/OrderDomainService.cs
+namespace OrderService;
+
+public class OrderDomainService(
+    IOrderRepository orderRepo,         // own tables in shared DB
+    ICustomerServiceClient customerApi,
+    IInventoryServiceClient inventoryApi,
+    IPaymentServiceClient paymentApi)
+{
+    public async Task<Order> PlaceOrderAsync(PlaceOrderRequest request)
+    {
+        // ✅ Service boundary — call customer service's API, not its tables
+        var customer = await customerApi.GetCustomerAsync(request.CustomerId);
+        if (customer.Status != CustomerStatus.Active)
+            throw new InvalidOperationException($"Customer {request.CustomerId} is not active");
+
+        // ✅ Service boundary — call inventory service's API
+        var available = await inventoryApi.CheckAvailabilityAsync(
+            request.ProductId, request.Quantity);
+        if (!available)
+            throw new InvalidOperationException($"Insufficient inventory for {request.ProductId}");
+
+        // ✅ Service boundary — call payment service's API
+        var creditCheck = await paymentApi.CheckCreditAsync(
+            request.CustomerId, request.Quantity * request.UnitPrice);
+        if (!creditCheck.Approved)
+            throw new InvalidOperationException("Credit check failed");
+
+        // ✅ Own domain logic — only writes to ORDER tables
+        var order = await orderRepo.CreateAsync(new Order
+        {
+            CustomerId = request.CustomerId,
+            ProductId = request.ProductId,
+            Quantity = request.Quantity,
+            Total = request.Quantity * request.UnitPrice,
+            Status = OrderStatus.Confirmed,
+        });
+
+        // ✅ Reserve inventory via API
+        await inventoryApi.ReserveAsync(request.ProductId, request.Quantity, order.Id);
+
+        return order;
+    }
+}
+```
+
+### Java — Service-Based Architecture
+
+```java
+// order-service/src/main/java/com/example/order/OrderDomainService.java
+package com.example.order;
+
+public class OrderDomainService {
+
+    private final OrderRepository orderRepo;          // own tables in shared DB
+    private final CustomerServiceClient customerApi;
+    private final InventoryServiceClient inventoryApi;
+    private final PaymentServiceClient paymentApi;
+
+    public OrderDomainService(
+            OrderRepository orderRepo,
+            CustomerServiceClient customerApi,
+            InventoryServiceClient inventoryApi,
+            PaymentServiceClient paymentApi) {
+        this.orderRepo = orderRepo;
+        this.customerApi = customerApi;
+        this.inventoryApi = inventoryApi;
+        this.paymentApi = paymentApi;
+    }
+
+    public Order placeOrder(PlaceOrderRequest request) {
+        // ✅ Service boundary — call customer service's API, not its tables
+        var customer = customerApi.getCustomer(request.customerId());
+        if (customer.status() != CustomerStatus.ACTIVE) {
+            throw new IllegalStateException(
+                "Customer %s is not active".formatted(request.customerId()));
+        }
+
+        // ✅ Service boundary — call inventory service's API
+        boolean available = inventoryApi.checkAvailability(
+            request.productId(), request.quantity());
+        if (!available) {
+            throw new IllegalStateException(
+                "Insufficient inventory for %s".formatted(request.productId()));
+        }
+
+        // ✅ Service boundary — call payment service's API
+        var creditCheck = paymentApi.checkCredit(
+            request.customerId(), request.quantity() * request.unitPrice());
+        if (!creditCheck.approved()) {
+            throw new IllegalStateException("Credit check failed");
+        }
+
+        // ✅ Own domain logic — only writes to ORDER tables
+        var order = orderRepo.create(new Order(
+            request.customerId(),
+            request.productId(),
+            request.quantity(),
+            request.quantity() * request.unitPrice(),
+            OrderStatus.CONFIRMED
+        ));
+
+        // ✅ Reserve inventory via API
+        inventoryApi.reserve(request.productId(), request.quantity(), order.id());
+
+        return order;
+    }
+}
+```
+
+### When to Choose Service-Based Architecture
+
+| ✅ Good Fit | ❌ Poor Fit |
+|---|---|
+| Team of 5–25 engineers | 100+ engineers requiring fully independent deployment cadences |
+| Limited DevOps maturity or infrastructure budget | Mature platform team with full observability and service mesh |
+| You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features |
+| Your monolith has identifiable domain boundaries | Your system has no domain cohesion — it's a big ball of mud |
+| Evolutionary stepping stone → microservices if needed | Greenfield with clear bounded contexts and strong platform team |
+
+---
+
+## Scenario 6: Hexagonal Architecture (Ports & Adapters)
 
 The gold standard for managing coupling in a single service or module.
 
@@ -1037,14 +1419,15 @@ public class StripePaymentGateway implements PaymentGateway {
 ```mermaid
 flowchart TD
     subgraph patterns ["Pattern → Coupling Impact"]
-        DM["Distributed Monolith<br/>❌ High strength + High distance"]
+        DM["Distributed Monolith<br/>❌ Tangled calls + shared DB + scattered logic"]
         GS["God Service<br/>❌ Ce is enormous"]
         SL["Shared Library Hell<br/>❌ Hidden model coupling"]
         TC["Temporal Coupling<br/>❌ Runtime coupling via sync calls"]
+        SBA["Service-Based Architecture<br/>✅ Coarse-grained services, owned tables, API boundaries"]
         HEX["Hexagonal/Ports+Adapters<br/>✅ Contract coupling, clear boundaries"]
     end
     
-    DM -->|"Fix with"| EV[Event-driven + Contracts]
+    DM -->|"Fix with"| EV[Event-driven + Own databases]
     GS -->|"Fix with"| CQRS[Domain events + SRP]
     SL -->|"Fix with"| ACL[Anti-corruption layers]
     TC -->|"Fix with"| ASYNC[Async messaging + Sagas]
@@ -1053,6 +1436,7 @@ flowchart TD
     style GS fill:#ff6b6b,color:#fff
     style SL fill:#ff6b6b,color:#fff
     style TC fill:#ff6b6b,color:#fff
+    style SBA fill:#4dabf7,color:#fff
     style HEX fill:#69db7c,color:#333
 ```
 
