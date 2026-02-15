@@ -1,6 +1,6 @@
 # Coupling Metrics & Refactoring Guide
 
-[← Back to Main Guide](COUPLING.md) | [← Dimensions](coupling-dimensions.md)
+[← Back to Main Guide](README.md) | [← Dimensions](coupling-dimensions.md)
 
 > *"Not only could we see the positive change in the class diagram, but we could*
 > *also confirm that refactoring goals have been accomplished by looking at*
@@ -760,4 +760,4 @@ public class ArchitectureTest {
 
 ---
 
-[← Back to Main Guide](COUPLING.md) | [Next: Coupling in Practice →](coupling-in-practice.md)
+[← Back to Main Guide](README.md) | [Next: Coupling in Practice →](coupling-in-practice.md)

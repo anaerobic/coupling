@@ -18,6 +18,7 @@ This tutorial is split across several focused documents. Start here for the big 
 | **[Dimensions of Coupling](coupling-dimensions.md)** | Integration Strength, Distance, Volatility — with code examples |
 | **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)** | Efferent/Afferent coupling, Instability, how to use metrics to guide refactoring |
 | **[Coupling in Practice](coupling-in-practice.md)** | Full TypeScript, C#, and Java examples — monoliths and distributed systems |
+| **[Brownfield Strategies](brownfield-strategies.md)** | Strangler fig, service-based architecture, serverless extraction, API gateways |
 | **[References & Further Reading](coupling-references.md)** | Books, talks, articles, and podcasts |
 
 ---
@@ -77,7 +78,7 @@ mindmap
 
 Complexity is when you can't predict the outcome of a change. You make a tweak in one file, and three unrelated things break.
 
-**ELI5:** Complexity is like a tangled ball of Christmas lights. You pull one bulb and the whole string goes dark, and you have no idea why.
+**ELI5:** Complexity is like tweaking one ranking rule in a social feed: creators change what they post, users change what they click, and moderation patterns shift in unexpected ways. You can’t fully predict the outcome in advance—you run a small experiment, observe, then adapt.
 
 Using the **Cynefin framework**:
 - **Simple** system: you know exactly what will happen when you change something
@@ -217,7 +218,8 @@ flowchart TD
 | 1️⃣ | Read **[Dimensions of Coupling](coupling-dimensions.md)** to understand the three forces in detail |
 | 2️⃣ | Read **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)** to learn how to measure and improve coupling |
 | 3️⃣ | Study **[Coupling in Practice](coupling-in-practice.md)** for real TypeScript, C#, and Java examples |
-| 4️⃣ | Bookmark the **[References](coupling-references.md)** for ongoing learning |
+| 4️⃣ | Apply **[Brownfield Strategies](brownfield-strategies.md)** to migrate existing monoliths and distributed monoliths |
+| 5️⃣ | Bookmark the **[References](coupling-references.md)** for ongoing learning |
 
 ---
 

@@ -1,6 +1,6 @@
 # Coupling in Practice: Real-World Patterns
 
-[← Back to Main Guide](COUPLING.md) | [← Metrics & Refactoring](coupling-metrics-and-refactoring.md)
+[← Back to Main Guide](README.md) | [← Metrics & Refactoring](coupling-metrics-and-refactoring.md)
 
 > This guide applies coupling concepts to real TypeScript, C#, and Java codebases 
 > and distributed architectures. Each scenario shows a **before** (problematic) and 
@@ -1073,4 +1073,4 @@ Use this checklist during code reviews and architecture reviews:
 
 ---
 
-[← Back to Main Guide](COUPLING.md) | [Next: References & Further Reading →](coupling-references.md)
+[← Back to Main Guide](README.md) | [Next: Brownfield Strategies →](brownfield-strategies.md) | [References →](coupling-references.md)

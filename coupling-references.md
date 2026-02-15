@@ -1,6 +1,6 @@
 # Coupling: References & Further Reading
 
-[← Back to Main Guide](COUPLING.md)
+[← Back to Main Guide](README.md)
 
 ---
 
@@ -152,4 +152,4 @@ Check the [coupling.dev podcasts page](https://coupling.dev/posts/learning-resou
 
 ---
 
-[← Back to Main Guide](COUPLING.md)
+[← Back to Main Guide](README.md)

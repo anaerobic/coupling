@@ -1,6 +1,6 @@
 # Dimensions of Coupling
 
-[← Back to Main Guide](COUPLING.md)
+[← Back to Main Guide](README.md)
 
 > *"These dimensions don't act in isolation — instead, their interplay determines*
 > *whether a design leads to modularity or complexity."*
@@ -660,4 +660,4 @@ flowchart TD
 
 ---
 
-[← Back to Main Guide](COUPLING.md) | [Next: Metrics & Refactoring →](coupling-metrics-and-refactoring.md)
+[← Back to Main Guide](README.md) | [Next: Metrics & Refactoring →](coupling-metrics-and-refactoring.md)
