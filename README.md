@@ -8,21 +8,25 @@
 
 ---
 
-## 🗺️ Tutorial Map
+## Disclaimer
 
-This tutorial is split across several focused documents. Start here for the big picture, then dive into each topic.
+This project borrows its foundational principles of balancing coupling, managing complexity and negotiating trade-offs from [Vlad Khononov's "Balancing Coupling in Software Design"](https://coupling.dev) and attempts to build upon these by connecting the dots to other books and resources that I have found useful in thinking about the technical, economic and social factors that encompass the art and science of engineering software and architecting solutions; however, this is absolutely no substitute for reading the book(s) and formulating your own ideas and opinions, and please excuse me if I have misinterpreted any of the concepts therein... PR's are much appreciated!
 
-| Document                                                         | What You'll Learn                                                                      |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **[This file](#overview)**                                       | Big-picture concepts, ELI5 explanations, connascence taxonomy, the coupling mindmap    |
-| **[Dimensions of Coupling](coupling-dimensions.md)**             | Integration Strength, Distance, Volatility — with code examples                        |
-| **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)** | Efferent/Afferent coupling, Instability, how to use metrics to guide refactoring       |
-| **[Coupling in Practice](coupling-in-practice.md)**              | Full TypeScript, C#, and Java examples — monoliths and distributed systems             |
-| **[FRP & Coupling](functional-reactive-coupling.md)**            | Observables (RxJS), Actor Model (XState), Highland streams — through the coupling lens |
-| **[Brownfield Strategies](brownfield-strategies.md)**            | Strangler fig, service-based architecture, serverless extraction, API gateways         |
+## 🗺️ Map
+
+This guide is split across several focused documents. Start here for the big picture, then dive into each topic.
+
+| Document                                                                          | What You'll Learn                                                                            |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **[This file](#overview)**                                                        | Big-picture concepts, ELI5 explanations, connascence taxonomy, the coupling mindmap          |
+| **[Dimensions of Coupling](coupling-dimensions.md)**                              | Integration Strength, Distance, Volatility — with code examples                              |
+| **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)**                  | Efferent/Afferent coupling, Instability, how to use metrics to guide refactoring             |
+| **[Coupling in Practice](coupling-in-practice.md)**                               | Full TypeScript, C#, and Java examples — monoliths and distributed systems                   |
+| **[FRP & Coupling](functional-reactive-coupling.md)**                             | Observables (RxJS), Actor Model (XState), Highland streams — through the coupling lens       |
+| **[Brownfield Strategies](brownfield-strategies.md)**                             | Strangler fig, service-based architecture, serverless extraction, API gateways               |
 | **[Three C's of Distributed Transactions](three-cs-distributed-transactions.md)** | Sync vs. async, atomic vs. eventual, orchestrated vs. choreographed — the Eight Saga Species |
-| **[Durable Execution & Orchestration](durable-execution-orchestration.md)** | Temporal, durable workflows, saga tradeoffs, platform coupling — through the coupling lens |
-| **[References & Further Reading](coupling-references.md)**       | Books, talks, articles, and podcasts                                                   |
+| **[Durable Execution & Orchestration](durable-execution-orchestration.md)**       | Temporal, durable workflows, saga tradeoffs, platform coupling — through the coupling lens   |
+| **[References & Further Reading](coupling-references.md)**                        | Books, talks, articles, and podcasts                                                         |
 
 ---
 
@@ -161,24 +165,24 @@ BALANCE    = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY
 
 From weakest (easiest to refactor) to strongest:
 
-| Level                          | Description                                                 | Example                                                        |
-| ------------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
-| **Name**                       | Components must agree on a name                             | Calling a method `calculatePrice()` by that name               |
-| **Type**                       | Components must agree on a type                             | A function expecting a `string` vs. a `number`                 |
-| **Meaning** (aka Convention)   | A special value carries implicit meaning                    | `statusId = 7` — what does 7 mean?                             |
-| **Algorithm**                  | Components must agree on a computation                      | Sender and receiver both use the same hashing algorithm        |
-| **Position**                   | Meaning is determined by ordering                           | `new Order(id, customerId, items, address, payment)` — swap two args and the compiler won't save you |
+| Level                        | Description                              | Example                                                                                              |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Name**                     | Components must agree on a name          | Calling a method `calculatePrice()` by that name                                                     |
+| **Type**                     | Components must agree on a type          | A function expecting a `string` vs. a `number`                                                       |
+| **Meaning** (aka Convention) | A special value carries implicit meaning | `statusId = 7` — what does 7 mean?                                                                   |
+| **Algorithm**                | Components must agree on a computation   | Sender and receiver both use the same hashing algorithm                                              |
+| **Position**                 | Meaning is determined by ordering        | `new Order(id, customerId, items, address, payment)` — swap two args and the compiler won't save you |
 
 #### Dynamic Connascence (runtime)
 
 Even the weakest dynamic level is stronger than the strongest static level:
 
-| Level             | Description                                             | Example                                                |
-| ----------------- | ------------------------------------------------------- | ------------------------------------------------------ |
-| **Execution**     | Operations must occur in a specific order               | `beginTransaction()` before `commit()`                 |
-| **Timing**        | Operations must occur within a time constraint          | An API call must complete before a 30-second timeout   |
-| **Value**         | Multiple values must change together                    | Triangle edges must satisfy the triangle inequality    |
-| **Identity**      | Components must reference the same instance             | Two services sharing a database connection or unit of work |
+| Level         | Description                                    | Example                                                    |
+| ------------- | ---------------------------------------------- | ---------------------------------------------------------- |
+| **Execution** | Operations must occur in a specific order      | `beginTransaction()` before `commit()`                     |
+| **Timing**    | Operations must occur within a time constraint | An API call must complete before a 30-second timeout       |
+| **Value**     | Multiple values must change together           | Triangle edges must satisfy the triangle inequality        |
+| **Identity**  | Components must reference the same instance    | Two services sharing a database connection or unit of work |
 
 #### The Three Properties of Connascence
 
@@ -321,5 +325,3 @@ flowchart TD
 | 8️⃣   | Bookmark the **[References](coupling-references.md)** for ongoing learning                                                         |
 
 ---
-
-_Based on concepts from [Vlad Khononov's "Balancing Coupling in Software Design"](https://coupling.dev), [Zoran Horvat's coupling metrics guide](https://codinghelmet.com/articles/how-to-use-module-coupling-and-instability-metrics-to-guide-refactoring), and [Oliver Drotbohm's alternative view on instability-abstractness](https://odrotbohm.de/2024/09/the-instability-abstractness-relationsship-an-alternative-view/)._
