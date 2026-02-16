@@ -5,7 +5,7 @@
 > _"Not only could we see the positive change in the class diagram, but we could_
 > _also confirm that refactoring goals have been accomplished by looking at_
 > _coupling and instability metrics."_
-> — Zoran Horvat
+> — Zoran Horvat in [How to Use Module Coupling and Instability Metrics to Guide Refactoring](https://codinghelmet.com/articles/how-to-use-module-coupling-and-instability-metrics-to-guide-refactoring)
 
 This guide covers the classical coupling metrics (efferent, afferent, instability, abstractness), shows how to use them to guide refactoring, and includes an important critical perspective on when these metrics can mislead you.
 
@@ -580,7 +580,7 @@ flowchart TB
 
 ## ⚠️ The Alternative View: When Metrics Mislead
 
-Oliver Drotbohm raises a critical counterpoint that every team should understand.
+Oliver Drotbohm raises a critical counterpoint in [The Instability-Abstractness-Relationship — An Alternative View](https://odrotbohm.de/2024/09/the-instability-abstractness-relationsship-an-alternative-view/) that every team should understand.
 
 ### The Problem with Abstractness-as-a-Metric
 

@@ -213,13 +213,11 @@ flowchart TD
     EB -->|"InventoryReserved"| SS
     PS -->|"PaymentConfirmed event"| EB
     ISvc -->|"InventoryReserved event"| EB
-```
-
-> **Three C's lens:** This "After" design is an **Anthology (AEC)** saga — Asynchronous communication via the Event Bus, Eventual consistency (no compensation/rollback), and Choreographed coordination (no central orchestrator). This gives maximum decoupling but requires distributed tracing for observability. See [The Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) for the full taxonomy.
-
     OS -.->|"HTTP: Check credit"| PS
     OS -.->|"HTTP: Get customer"| CSvc
 ```
+
+> **Three C's lens:** This "After" design is an **Anthology (AEC)** saga — Asynchronous communication via the Event Bus, Eventual consistency (no compensation/rollback), and Choreographed coordination (no central orchestrator). This gives maximum decoupling but requires distributed tracing for observability. See [The Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) for the full taxonomy.
 
 **Coupling Analysis After:**
 | Dimension | Value | Why |
