@@ -1,6 +1,6 @@
 # Coupling: References & Further Reading
 
-[← Back to Main Guide](README.md)
+[← Back to Main Guide](README.md) | [← Durable Execution & Orchestration](durable-execution-orchestration.md)
 
 ---
 
@@ -183,4 +183,4 @@ Check the [coupling.dev podcasts page](https://coupling.dev/posts/learning-resou
 
 ---
 
-[← Back to Main Guide](README.md)
+[← Back to Main Guide](README.md) | [← Durable Execution & Orchestration](durable-execution-orchestration.md)

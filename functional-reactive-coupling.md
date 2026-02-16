@@ -1,6 +1,6 @@
 # Functional Reactive Programming & Coupling
 
-[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md)
+[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md) | [Next: Brownfield Strategies →](brownfield-strategies.md)
 
 > _"By updating the tools we use on Arrays, and applying them to values distributed_
 > _in time instead of space, we can discard plumbing and focus on the important things."_
@@ -1557,4 +1557,4 @@ flowchart TD
 
 ---
 
-[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md)
+[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md) | [Next: Brownfield Strategies →](brownfield-strategies.md)

@@ -1,6 +1,6 @@
 # Brownfield Strategies: Refactoring Monoliths and Distributed Monoliths
 
-[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md)
+[← Back to Main Guide](README.md) | [← FRP & Coupling](functional-reactive-coupling.md) | [Next: Three C's of Distributed Transactions →](three-cs-distributed-transactions.md)
 
 > You have a monolith. Or worse — a distributed monolith. You can't rewrite it.
 > You can't freeze features for six months. You have real users, limited budget,
@@ -100,7 +100,7 @@ The _Hard Parts_ authors recommend measuring component size by **total number of
 | Shared code | Extensive shared library that would need coordinated releases |
 | Data relationships | Data belongs to a single bounded context |
 
-> **Three C's connection:** The first two integrators — *Database transactions* and *Workflow coupling* — map directly to the **Consistency** and **Communication** dimensions of the [Three C's framework](durable-execution-orchestration.md#the-three-cs-of-distributed-transactions). If two components need atomic consistency, splitting them forces you into saga compensation logic. If they communicate so heavily that async messaging would create unacceptable latency, they're functionally one service. Use the [Eight Saga Species](durable-execution-orchestration.md#the-eight-saga-species) to evaluate whether the saga complexity of splitting is justified.
+> **Three C's connection:** The first two integrators — *Database transactions* and *Workflow coupling* — map directly to the **Consistency** and **Communication** dimensions of the [Three C's framework](three-cs-distributed-transactions.md). If two components need atomic consistency, splitting them forces you into saga compensation logic. If they communicate so heavily that async messaging would create unacceptable latency, they're functionally one service. Use the [Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) to evaluate whether the saga complexity of splitting is justified.
 
 ---
 
@@ -1847,4 +1847,4 @@ These resources informed this guide. For the full reference list, see [coupling-
 
 ---
 
-[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md) | [Durable Execution →](durable-execution-orchestration.md) | [→ References](coupling-references.md)
+[← Back to Main Guide](README.md) | [← FRP & Coupling](functional-reactive-coupling.md) | [Next: Three C's of Distributed Transactions →](three-cs-distributed-transactions.md)

@@ -20,6 +20,7 @@ This tutorial is split across several focused documents. Start here for the big 
 | **[Coupling in Practice](coupling-in-practice.md)**              | Full TypeScript, C#, and Java examples — monoliths and distributed systems             |
 | **[FRP & Coupling](functional-reactive-coupling.md)**            | Observables (RxJS), Actor Model (XState), Highland streams — through the coupling lens |
 | **[Brownfield Strategies](brownfield-strategies.md)**            | Strangler fig, service-based architecture, serverless extraction, API gateways         |
+| **[Three C's of Distributed Transactions](three-cs-distributed-transactions.md)** | Sync vs. async, atomic vs. eventual, orchestrated vs. choreographed — the Eight Saga Species |
 | **[Durable Execution & Orchestration](durable-execution-orchestration.md)** | Temporal, durable workflows, saga tradeoffs, platform coupling — through the coupling lens |
 | **[References & Further Reading](coupling-references.md)**       | Books, talks, articles, and podcasts                                                   |
 
@@ -315,8 +316,9 @@ flowchart TD
 | 3️⃣   | Study **[Coupling in Practice](coupling-in-practice.md)** for real TypeScript, C#, and Java examples                               |
 | 4️⃣   | Explore **[FRP & Coupling](functional-reactive-coupling.md)** to see how reactive streams, actors, and statecharts affect coupling |
 | 5️⃣   | Apply **[Brownfield Strategies](brownfield-strategies.md)** to migrate existing monoliths and distributed monoliths                |
-| 6️⃣   | See **[Durable Execution & Orchestration](durable-execution-orchestration.md)** for how Temporal reshapes coupling tradeoffs       |
-| 7️⃣   | Bookmark the **[References](coupling-references.md)** for ongoing learning                                                         |
+| 6️⃣   | Study the **[Three C's of Distributed Transactions](three-cs-distributed-transactions.md)** for saga topology and tradeoffs        |
+| 7️⃣   | See **[Durable Execution & Orchestration](durable-execution-orchestration.md)** for how Temporal reshapes coupling tradeoffs       |
+| 8️⃣   | Bookmark the **[References](coupling-references.md)** for ongoing learning                                                         |
 
 ---
 

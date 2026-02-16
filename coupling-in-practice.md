@@ -1,6 +1,6 @@
 # Coupling in Practice: Real-World Patterns
 
-[← Back to Main Guide](README.md) | [← Metrics & Refactoring](coupling-metrics-and-refactoring.md)
+[← Back to Main Guide](README.md) | [← Metrics & Refactoring](coupling-metrics-and-refactoring.md) | [Next: FRP & Coupling →](functional-reactive-coupling.md)
 
 > This guide applies coupling concepts to real TypeScript, C#, and Java codebases
 > and distributed architectures. Each scenario shows a **before** (problematic) and
@@ -215,7 +215,7 @@ flowchart TD
     ISvc -->|"InventoryReserved event"| EB
 ```
 
-> **Three C's lens:** This "After" design is an **Anthology (AEC)** saga — Asynchronous communication via the Event Bus, Eventual consistency (no compensation/rollback), and Choreographed coordination (no central orchestrator). This gives maximum decoupling but requires distributed tracing for observability. See [The Eight Saga Species](durable-execution-orchestration.md#the-eight-saga-species) for the full taxonomy.
+> **Three C's lens:** This "After" design is an **Anthology (AEC)** saga — Asynchronous communication via the Event Bus, Eventual consistency (no compensation/rollback), and Choreographed coordination (no central orchestrator). This gives maximum decoupling but requires distributed tracing for observability. See [The Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) for the full taxonomy.
 
     OS -.->|"HTTP: Check credit"| PS
     OS -.->|"HTTP: Get customer"| CSvc
@@ -637,7 +637,7 @@ flowchart LR
 
 ## Scenario 4: Temporal Coupling in Synchronous Calls
 
-When services call each other synchronously, they create temporal coupling — both must be running at the same time. The "Before" example below is an **Epic (SAO)** saga — the most tightly coupled of the [Eight Saga Species](durable-execution-orchestration.md#the-eight-saga-species). The "After" refactoring moves toward **Parallel (AEO)** by introducing async communication via queues while maintaining orchestrated coordination. See [The Three C's of Distributed Transactions](durable-execution-orchestration.md#the-three-cs-of-distributed-transactions) for the full framework.
+When services call each other synchronously, they create temporal coupling — both must be running at the same time. The "Before" example below is an **Epic (SAO)** saga — the most tightly coupled of the [Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species). The "After" refactoring moves toward **Parallel (AEO)** by introducing async communication via queues while maintaining orchestrated coordination. See [The Three C's of Distributed Transactions](three-cs-distributed-transactions.md) for the full framework.
 
 ### ELI5
 
@@ -1515,4 +1515,4 @@ Use this checklist during code reviews and architecture reviews:
 
 ---
 
-[← Back to Main Guide](README.md) | [Next: Brownfield Strategies →](brownfield-strategies.md) | [Durable Execution →](durable-execution-orchestration.md) | [References →](coupling-references.md)
+[← Back to Main Guide](README.md) | [← Metrics & Refactoring](coupling-metrics-and-refactoring.md) | [Next: FRP & Coupling →](functional-reactive-coupling.md)

@@ -1,6 +1,6 @@
 # Dimensions of Coupling
 
-[← Back to Main Guide](README.md)
+[← Back to Main Guide](README.md) | [Next: Metrics & Refactoring →](coupling-metrics-and-refactoring.md)
 
 > _"These dimensions don't act in isolation — instead, their interplay determines_
 > _whether a design leads to modularity or complexity."_
@@ -611,6 +611,10 @@ class BillingService:
         return plan.base_price * multiplier
 ```
 
+**C# example — different teams, needs contract coupling:**
+
+```csharp
+// Different teams → high distance → use contracts
 
 // Team A publishes a NuGet package with only DTOs/events
 // Package: Acme.Orders.Contracts

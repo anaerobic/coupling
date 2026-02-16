@@ -1,6 +1,6 @@
 # Coupling Metrics & Refactoring Guide
 
-[← Back to Main Guide](README.md) | [← Dimensions](coupling-dimensions.md)
+[← Back to Main Guide](README.md) | [← Dimensions of Coupling](coupling-dimensions.md) | [Next: Coupling in Practice →](coupling-in-practice.md)
 
 > _"Not only could we see the positive change in the class diagram, but we could_
 > _also confirm that refactoring goals have been accomplished by looking at_
@@ -914,4 +914,4 @@ def test_infrastructure_depends_on_domain():
 
 ---
 
-[← Back to Main Guide](README.md) | [Next: Coupling in Practice →](coupling-in-practice.md)
+[← Back to Main Guide](README.md) | [← Dimensions of Coupling](coupling-dimensions.md) | [Next: Coupling in Practice →](coupling-in-practice.md)
