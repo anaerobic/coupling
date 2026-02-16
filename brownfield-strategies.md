@@ -100,6 +100,8 @@ The _Hard Parts_ authors recommend measuring component size by **total number of
 | Shared code | Extensive shared library that would need coordinated releases |
 | Data relationships | Data belongs to a single bounded context |
 
+> **Three C's connection:** The first two integrators — *Database transactions* and *Workflow coupling* — map directly to the **Consistency** and **Communication** dimensions of the [Three C's framework](durable-execution-orchestration.md#the-three-cs-of-distributed-transactions). If two components need atomic consistency, splitting them forces you into saga compensation logic. If they communicate so heavily that async messaging would create unacceptable latency, they're functionally one service. Use the [Eight Saga Species](durable-execution-orchestration.md#the-eight-saga-species) to evaluate whether the saga complexity of splitting is justified.
+
 ---
 
 ## Phase 2: Choose a Migration Strategy

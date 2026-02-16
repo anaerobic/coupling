@@ -108,6 +108,20 @@ public class ReportGenerator
 }
 ```
 
+#### Python — Bad: Reaching into another module's private state
+
+```python
+# ❌ Accessing internal cache by reaching into private attributes
+class ReportGenerator:
+    def generate_user_report(self, user_service: "UserService") -> dict:
+        # Intrusive! Accessing a name-mangled private attribute
+        cache = user_service._UserService__user_cache  # type: ignore[attr-defined]
+        return {
+            "total_users": len(cache),
+            "active_users": sum(1 for u in cache.values() if u.is_active),
+        }
+```
+
 #### Java — Bad: Coupling to internal framework details
 
 ```java
@@ -169,10 +183,16 @@ class PricingService {
 // ✅ Discount rule lives in ONE place — the domain
 public static class DiscountPolicy
 {
+    // Named constants eliminate connascence of meaning (magic numbers)
+    private const decimal Tier1Threshold = 100m;
+    private const decimal Tier1Rate = 0.10m;
+    private const decimal Tier2Threshold = 50m;
+    private const decimal Tier2Rate = 0.05m;
+
     public static decimal Calculate(decimal orderTotal)
     {
-        if (orderTotal > 100m) return orderTotal * 0.10m;
-        if (orderTotal > 50m)  return orderTotal * 0.05m;
+        if (orderTotal > Tier1Threshold) return orderTotal * Tier1Rate;
+        if (orderTotal > Tier2Threshold) return orderTotal * Tier2Rate;
         return 0m;
     }
 }
@@ -190,6 +210,33 @@ public class CartPreviewController : ControllerBase
     public ActionResult<decimal> GetDiscountPreview([FromQuery] decimal total)
         => Ok(DiscountPolicy.Calculate(total));
 }
+```
+
+#### Python — Better: Single source of truth
+
+```python
+# ✅ Discount rule lives in ONE place — a pure function in the domain layer
+from decimal import Decimal
+
+# Named constants eliminate connascence of meaning
+_TIER_1_THRESHOLD = Decimal("100")
+_TIER_1_RATE = Decimal("0.10")
+_TIER_2_THRESHOLD = Decimal("50")
+_TIER_2_RATE = Decimal("0.05")
+
+
+def calculate_discount(order_total: Decimal) -> Decimal:
+    if order_total > _TIER_1_THRESHOLD:
+        return order_total * _TIER_1_RATE
+    if order_total > _TIER_2_THRESHOLD:
+        return order_total * _TIER_2_RATE
+    return Decimal(0)
+
+
+# Both the API and internal services import the same function
+class PricingService:
+    def get_discount(self, order: "Order") -> Decimal:
+        return calculate_discount(order.total)
 ```
 
 ---
@@ -213,6 +260,9 @@ public record Order(
 // OrderService uses Order
 public class OrderService {
     public Order createOrder(CreateOrderRequest req) {
+        // ⚠️ Connascence of position — swap two args and the compiler won't help.
+        // Java records lack named parameters; see the Python example below
+        // for connascence of name via keyword arguments.
         return new Order(UUID.randomUUID().toString(), req.customerId(),
                         req.items(), req.address(), req.payment());
     }
@@ -258,6 +308,40 @@ function toShipmentRequest(order: Order): ShipmentRequest {
 }
 ```
 
+#### Python — Better: Tailored models per context
+
+```python
+from dataclasses import dataclass
+from uuid import uuid4
+
+
+# Order context — full model
+@dataclass(frozen=True)
+class Order:
+    order_id: str
+    customer_id: str
+    items: list["LineItem"]
+    shipping_address: "Address"
+    payment: "PaymentInfo"
+
+
+# Shipping context — only what shipping needs (connascence of name only)
+@dataclass(frozen=True)
+class ShipmentRequest:
+    shipment_id: str
+    destination: "Address"
+    total_weight_kg: float
+
+
+# Anti-Corruption Layer — maps between bounded contexts
+def to_shipment_request(order: Order) -> ShipmentRequest:
+    return ShipmentRequest(
+        shipment_id=str(uuid4()),
+        destination=order.shipping_address,
+        total_weight_kg=sum(i.weight_kg * i.qty for i in order.items),
+    )
+```
+
 ---
 
 ### Level 4: Contract Coupling (🔵 Lowest Risk)
@@ -289,7 +373,10 @@ public class OrderService
 
         // Publish contract — not the internal model
         await _eventBus.Publish(new OrderPlacedEvent(
-            order.Id, order.CustomerId, order.Total, DateTime.UtcNow
+            OrderId: order.Id,        // ✅ C# named arguments weaken
+            CustomerId: order.CustomerId,  //    connascence of position
+            TotalAmount: order.Total,      //    → connascence of name
+            PlacedAt: DateTime.UtcNow
         ));
     }
 }
@@ -324,6 +411,7 @@ public class StripePaymentGateway implements PaymentGateway {
     @Override
     public PaymentResult charge(PaymentRequest request) {
         // Maps from our contract to Stripe's API — internal detail
+        // Builder pattern → connascence of name (not position) ✅
         ChargeCreateParams params = ChargeCreateParams.builder()
             .setAmount(request.amountInCents())
             .setCurrency(request.currency())
@@ -334,6 +422,59 @@ public class StripePaymentGateway implements PaymentGateway {
         return new PaymentResult(charge.getId(), charge.getStatus());
     }
 }
+```
+
+#### Python — Contract via Protocol (structural typing)
+
+```python
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Protocol
+
+
+# ✅ Contract — consumers depend only on this protocol
+class PaymentGateway(Protocol):
+    def charge(self, request: "PaymentRequest") -> "PaymentResult": ...
+    def refund(self, transaction_id: str, amount: Decimal) -> "PaymentResult": ...
+
+
+@dataclass(frozen=True)
+class PaymentRequest:
+    amount_in_cents: int
+    currency: str
+    token_id: str
+
+
+@dataclass(frozen=True)
+class PaymentResult:
+    transaction_id: str
+    status: str
+
+
+# Implementation is hidden — consumers only know the Protocol
+class StripePaymentGateway:  # no explicit inheritance needed with Protocol
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key  # internal detail
+
+    def charge(self, request: PaymentRequest) -> PaymentResult:
+        # Maps from our contract to Stripe's SDK — internal detail
+        intent = stripe.PaymentIntent.create(
+            amount=request.amount_in_cents,  # connascence of name only ✅
+            currency=request.currency,
+            api_key=self._api_key,
+        )
+        return PaymentResult(
+            transaction_id=intent.id,
+            status=intent.status,
+        )
+
+    def refund(self, transaction_id: str, amount: Decimal) -> PaymentResult:
+        refund = stripe.Refund.create(
+            payment_intent=transaction_id,
+            amount=int(amount * 100),
+            api_key=self._api_key,
+        )
+        return PaymentResult(transaction_id=refund.id, status=refund.status)
 ```
 
 ---
@@ -440,10 +581,36 @@ export class BillingService {
 }
 ```
 
-**C# example — different teams, needs contract coupling:**
+**Python example — same team, shared model in a monorepo:**
 
-```csharp
-// Different teams → high distance → use contracts
+```python
+# Same team, same monorepo — shared types are fine (low distance)
+
+# packages/shared_types/user.py
+from dataclasses import dataclass
+from typing import Literal
+
+Tier = Literal["free", "pro", "enterprise"]
+
+
+@dataclass(frozen=True)
+class UserProfile:
+    id: str
+    name: str
+    email: str
+    tier: Tier
+
+
+# services/billing/billing_service.py
+from shared_types.user import UserProfile
+
+
+class BillingService:
+    def calculate_price(self, user: UserProfile, plan: "Plan") -> float:
+        multiplier = 0.8 if user.tier == "enterprise" else 1.0
+        return plan.base_price * multiplier
+```
+
 
 // Team A publishes a NuGet package with only DTOs/events
 // Package: Acme.Orders.Contracts
@@ -555,6 +722,56 @@ class EmailService {
 }
 ```
 
+### Python — Volatility-aware architecture
+
+```python
+from typing import Protocol
+from dataclasses import dataclass
+import boto3
+
+
+# 🔴 CORE: Pricing Engine — changes weekly as we experiment
+# Keep this ISOLATED. Contract coupling only (Protocol = structural typing).
+class PricingPort(Protocol):
+    def calculate_price(self, product_id: str, context: "PricingContext") -> "Price": ...
+
+
+# 🟡 SUPPORTING: Inventory Management — changes quarterly
+# Model coupling is fine within the bounded context
+@dataclass
+class StockReservation:
+    product_id: str
+    quantity: int
+
+
+class InventoryService:
+    def __init__(self, repo: "InventoryRepository") -> None:
+        self._repo = repo
+
+    def reserve_stock(self, order_id: str, items: list[StockReservation]) -> None:
+        for item in items:
+            stock = self._repo.find_by_product_id(item.product_id)
+            stock.reserve(quantity=item.quantity, order_id=order_id)
+            self._repo.save(stock)
+
+
+# 🟢 GENERIC: Email Sending — hasn't changed in years
+# Even model coupling to the boto3 library is fine
+class EmailService:
+    def __init__(self) -> None:
+        self._ses = boto3.client("ses")
+
+    def send(self, *, to: str, subject: str, body: str) -> None:
+        self._ses.send_email(
+            Source="noreply@shop.com",
+            Destination={"ToAddresses": [to]},
+            Message={
+                "Subject": {"Data": subject},
+                "Body": {"Html": {"Data": body}},
+            },
+        )
+```
+
 ### Essential vs. Accidental Volatility
 
 > ⚠️ **Warning:** Don't confuse _commit frequency_ with _volatility_.
@@ -624,6 +841,75 @@ public class OrderService {
         return new Order(req, price);
     }
 }
+```
+
+### Python — Reducing coupling to volatile component
+
+```python
+from typing import Protocol
+from dataclasses import dataclass
+from decimal import Decimal
+
+
+# 🔴 The pricing engine changes weekly — it's our core subdomain
+
+# ❌ BAD: Directly coupling to the volatile implementation
+class BadOrderService:
+    def __init__(self, pricing_engine: "PricingEngine") -> None:
+        self._engine = pricing_engine  # concrete, volatile class
+
+    def create_order(self, req: "CreateOrderRequest") -> "Order":
+        # If PricingEngine's API changes (which it does weekly), this breaks
+        # Also: connascence of position — 5 positional args!
+        price = self._engine.calculate_dynamic_price(
+            req.product_id, req.quantity, req.customer_segment,
+            req.ab_test_group, req.geolocation,  # API keeps growing!
+        )
+        return Order(req=req, price=price)
+
+
+# ✅ GOOD: Shield with a Protocol (anti-corruption layer)
+@dataclass(frozen=True)
+class Price:
+    amount: Decimal
+    currency: str = "USD"
+
+
+class PricingPort(Protocol):
+    def calculate(self, *, product_id: str, quantity: int, customer_id: str) -> Price:
+        # keyword-only args → connascence of name, not position
+        ...
+
+
+class PricingAdapter:
+    """Translates our stable contract to the volatile engine's API."""
+
+    def __init__(self, engine: "PricingEngine", customer_svc: "CustomerService") -> None:
+        self._engine = engine
+        self._customer_svc = customer_svc
+
+    def calculate(self, *, product_id: str, quantity: int, customer_id: str) -> Price:
+        segment = self._customer_svc.get_segment(customer_id)
+        ab_group = self._customer_svc.get_ab_group(customer_id)
+        geo = self._customer_svc.locate(customer_id)
+        raw = self._engine.calculate_dynamic_price(
+            product_id, quantity, segment, ab_group, geo,
+        )
+        return Price(amount=raw)
+
+
+# OrderService depends on the STABLE port, not the VOLATILE engine
+class OrderService:
+    def __init__(self, pricing: PricingPort) -> None:
+        self._pricing = pricing
+
+    def create_order(self, req: "CreateOrderRequest") -> "Order":
+        price = self._pricing.calculate(
+            product_id=req.product_id,
+            quantity=req.quantity,
+            customer_id=req.customer_id,
+        )
+        return Order(req=req, price=price)
 ```
 
 ---

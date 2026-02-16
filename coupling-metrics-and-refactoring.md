@@ -59,10 +59,10 @@ $$I = \frac{C_e}{C_a + C_e}$$
 | **0.5** | Neutral             | Risky — changes might cascade in either direction                            |
 | **1.0** | Absolutely unstable | You depend on others, but nobody depends on you. Change freely!              |
 
-**ELI5:** Instability is like asking _"Who has more power — the celebrity or the fan?"_
+**ELI5:** Instability is like asking _"How easy is it for this thing to change?"_
 
-- A celebrity (I=0, stable) can't change their phone number without a PR disaster — millions depend on them.
-- A fan (I=1, unstable) can change their number anytime — nobody's affected, but they have to keep up with the celebrity's schedule.
+- A league rulebook (**I = 0, stable**) is hard to change mid-season — every team, coach, and referee depends on it.
+- A bench player's warm-up routine (**I = 1, unstable**) can change anytime — nobody depends on it, but it still has to adapt to team tactics and game rules.
 
 ### Abstractness (A)
 
@@ -485,6 +485,70 @@ public class UserRepository implements com.example.domain.IRepository<com.exampl
 }
 ```
 
+#### Python — Same pattern
+
+```python
+from dataclasses import dataclass
+from typing import Protocol, TypeVar, Generic
+
+# --- PRESENTATION LAYER ---
+
+@dataclass(frozen=True)
+class UserViewModel:
+    name: str
+    email: str
+
+
+# Presentation defines what it needs (its own port)
+class IUserServices(Protocol):
+    def get_user(self, name: str) -> UserViewModel: ...
+
+
+class UserView:
+    def __init__(self, user_services: IUserServices) -> None:  # ✅ depends on Protocol
+        self._user_services = user_services
+
+    def show_user(self, name: str) -> None:
+        vm = self._user_services.get_user(name)
+        self._draw(vm)
+
+    def _draw(self, model: UserViewModel) -> None:
+        ...  # render
+
+
+# --- DOMAIN LAYER ---
+
+@dataclass(frozen=True)
+class User:
+    name: str
+    email: str
+
+
+T = TypeVar("T")
+
+
+class IRepository(Protocol[T]):
+    def get_by_id(self, id: str) -> T: ...
+
+
+# Domain implements Presentation's port
+class UserServices:
+    def __init__(self, repository: IRepository["User"]) -> None:
+        self._repository = repository
+
+    def get_user(self, name: str) -> UserViewModel:
+        user = self._repository.get_by_id(name)
+        return UserViewModel(name=user.name, email=user.email)
+
+
+# --- INFRASTRUCTURE LAYER ---
+
+class UserRepository:  # implements IRepository[User] structurally
+    def get_by_id(self, id: str) -> User:
+        # Database access
+        return User(name=id, email=f"{id}@example.com")
+```
+
 ### Step 3: Measure Again
 
 | Module             | Ce  | Ca  | I = Ce/(Ce+Ca) | Change         |
@@ -760,6 +824,74 @@ public class ArchitectureTest {
 }
 ```
 
+### Python
+
+Tools:
+
+- **[import-linter](https://github.com/seddonym/import-linter)** — enforce dependency contracts between Python packages
+- **[pydeps](https://github.com/thebjorn/pydeps)** — generates module dependency graphs
+- **[pytest-archon](https://github.com/jwbargsten/pytest-archon)** — architecture tests for Python, inspired by ArchUnit
+- **[radon](https://github.com/rubik/radon)** — computes cyclomatic complexity and coupling metrics
+
+```bash
+# Visualize module dependency graph
+pydeps src/myapp --cluster --max-bacon=2
+
+# Check for circular imports
+pydeps src/myapp --no-show --no-output --log ERROR 2>&1 | grep "circular"
+
+# Measure cyclomatic complexity across the project
+radon cc src/ -a -nc
+```
+
+Example import-linter contract (`.importlinter` or `pyproject.toml`):
+
+```toml
+# pyproject.toml
+[tool.importlinter]
+root_packages = ["myapp"]
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on Infrastructure"
+type = "forbidden"
+source_modules = ["myapp.domain"]
+forbidden_modules = ["myapp.infrastructure"]
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "myapp.presentation",
+    "myapp.domain",
+    "myapp.infrastructure",
+]
+```
+
+Example pytest-archon test:
+
+```python
+# tests/test_architecture.py
+from pytest_archon import archrule
+
+
+def test_domain_does_not_depend_on_infrastructure():
+    (
+        archrule("domain_independence")
+        .match("myapp.domain.*")
+        .should_not_import("myapp.infrastructure.*")
+        .check("myapp")
+    )
+
+
+def test_infrastructure_depends_on_domain():
+    (
+        archrule("infra_depends_on_domain")
+        .match("myapp.infrastructure.*")
+        .may_import("myapp.domain.*")
+        .check("myapp")
+    )
+```
+
 ---
 
 ## Summary: Metrics Cheat Sheet
@@ -777,7 +909,7 @@ public class ArchitectureTest {
 1. **Metrics are a compass, not a GPS.** They point you in the right direction, but don't blindly follow them.
 2. **Use DIP to invert dependency directions** — make lower layers depend on upper layers through interfaces.
 3. **Don't add interfaces just to improve the abstractness metric.** Add them when they provide genuine abstraction.
-4. **Enforce coupling rules as automated tests** using ArchUnit (Java), ArchUnitNET (C#), or dependency-cruiser (TypeScript).
+4. **Enforce coupling rules as automated tests** using ArchUnit (Java), ArchUnitNET (C#), dependency-cruiser (TypeScript), or import-linter / pytest-archon (Python).
 5. **Measure, refactor, measure again** — use the before/after comparison to validate that your refactoring actually improved things.
 
 ---

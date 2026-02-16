@@ -14,7 +14,7 @@ This tutorial is split across several focused documents. Start here for the big 
 
 | Document                                                         | What You'll Learn                                                                      |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **[This file](#overview)**                                       | Big-picture concepts, ELI5 explanations, the coupling mindmap                          |
+| **[This file](#overview)**                                       | Big-picture concepts, ELI5 explanations, connascence taxonomy, the coupling mindmap    |
 | **[Dimensions of Coupling](coupling-dimensions.md)**             | Integration Strength, Distance, Volatility — with code examples                        |
 | **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)** | Efferent/Afferent coupling, Instability, how to use metrics to guide refactoring       |
 | **[Coupling in Practice](coupling-in-practice.md)**              | Full TypeScript, C#, and Java examples — monoliths and distributed systems             |
@@ -52,6 +52,18 @@ mindmap
         Core Subdomains
         Generic Subdomains
         Supporting Subdomains
+    Connascence
+      Static
+        Name
+        Type
+        Meaning
+        Algorithm
+        Position
+      Dynamic
+        Execution
+        Timing
+        Value
+        Identity
     Metrics
       Efferent Ce
       Afferent Ca
@@ -139,6 +151,85 @@ BALANCE    = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY
 > - **Loose coupling** (low strength, high distance): The band hires a session drummer who only needs to know the tempo and song structure (a _contract_). They don't need to know how each member plays — that's also _good_.
 > - **Tight coupling** (high strength, high distance): The guitarist in New York and the drummer in Tokyo try to share the same real-time audio feed and every note placement. Chaos. That's _bad_.
 > - **Low cohesion** (low strength, low distance): Random musicians in the same room playing unrelated songs. Waste of space. Also _bad_.
+
+### Connascence: A Complementary Vocabulary
+
+[Connascence](https://connascence.io) — from the Latin "born together" — is a taxonomy introduced by Meilir Page-Jones that classifies coupling at a finer granularity than traditional module coupling. Two components are _connascent_ if a change in one requires a corresponding change in the other. Where Khononov's integration strength model asks _how much knowledge_ is shared, connascence asks _what kind of knowledge_ and whether the dependency is visible at compile time or only at runtime.
+
+#### Static Connascence (compile-time)
+
+From weakest (easiest to refactor) to strongest:
+
+| Level                          | Description                                                 | Example                                                        |
+| ------------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| **Name**                       | Components must agree on a name                             | Calling a method `calculatePrice()` by that name               |
+| **Type**                       | Components must agree on a type                             | A function expecting a `string` vs. a `number`                 |
+| **Meaning** (aka Convention)   | A special value carries implicit meaning                    | `statusId = 7` — what does 7 mean?                             |
+| **Algorithm**                  | Components must agree on a computation                      | Sender and receiver both use the same hashing algorithm        |
+| **Position**                   | Meaning is determined by ordering                           | `new Order(id, customerId, items, address, payment)` — swap two args and the compiler won't save you |
+
+#### Dynamic Connascence (runtime)
+
+Even the weakest dynamic level is stronger than the strongest static level:
+
+| Level             | Description                                             | Example                                                |
+| ----------------- | ------------------------------------------------------- | ------------------------------------------------------ |
+| **Execution**     | Operations must occur in a specific order               | `beginTransaction()` before `commit()`                 |
+| **Timing**        | Operations must occur within a time constraint          | An API call must complete before a 30-second timeout   |
+| **Value**         | Multiple values must change together                    | Triangle edges must satisfy the triangle inequality    |
+| **Identity**      | Components must reference the same instance             | Two services sharing a database connection or unit of work |
+
+#### The Three Properties of Connascence
+
+Every instance of connascence should be evaluated on three axes — analogous to coupling's own dimensions:
+
+1. **Strength** — how hard is it to discover and refactor? (Connascence of name is trivial to fix; connascence of identity can require architectural changes)
+2. **Locality** — are the connascent elements close together or far apart? (Same function vs. different services)
+3. **Degree** — how many components are involved? (Two classes vs. hundreds)
+
+> These map directly to Khononov's framework: **Strength ≈ Integration Strength**, **Locality ≈ Distance**, **Degree ≈ Afferent Coupling (Ca)**.
+
+#### How Connascence Relates to Integration Strength
+
+Connascence and the [integration strength](coupling-dimensions.md#1-integration-strength) model describe different facets of the same phenomenon. Neither fully subsumes the other:
+
+```mermaid
+flowchart LR
+    subgraph connascence ["Connascence"]
+        CoN["Name / Type"]
+        CoM["Meaning"]
+        CoA["Algorithm"]
+        CoP["Position"]
+        CoE["Execution / Timing"]
+        CoV["Value / Identity"]
+    end
+
+    subgraph strength ["Integration Strength"]
+        Contract["🔵 Contract"]
+        Model["🟢 Model"]
+        Functional["🟠 Functional"]
+        Intrusive["🔴 Intrusive"]
+    end
+
+    CoN -.->|"often appears in"| Contract
+    CoM -.->|"often appears in"| Model
+    CoA -.->|"often appears in"| Functional
+    CoP -.->|"often appears in"| Contract
+    CoE -.->|"often appears in"| Functional
+    CoV -.->|"often appears in"| Intrusive
+```
+
+> ⚠️ The mapping is **not** a 1:1 correspondence. As [Vlad Khononov notes](https://coupling.dev/posts/related-topics/connascence/), the two models reflect different aspects of cross-component relationships. Content coupling (reaching into private state) maps to the highest module coupling level, but only requires knowledge of a name and type — the _lowest_ connascence levels. The integration strength model resolves these blind spots by combining both perspectives.
+
+#### Practical Refactoring Rule
+
+> **Weaken connascence where you can, strengthen locality where you must.**
+>
+> If two components _must_ share knowledge, keep them close together (low distance). If they _must_ be far apart, reduce the type of knowledge they share — push from Position → Name, from Meaning → Type, from Algorithm → Contract.
+
+👉 Look for connascence annotations (e.g., `// connascence of position →  name`) throughout the code examples in this guide — they highlight low-risk refactoring opportunities.
+
+📖 _Further reading: [Connascence on coupling.dev](https://coupling.dev/posts/related-topics/connascence/) · [Meilir Page-Jones, "What Every Programmer Should Know About OOD"](https://amzn.to/4bYH66g) · [connascence.io](https://connascence.io)_
 
 ---
 

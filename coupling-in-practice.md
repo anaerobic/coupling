@@ -213,6 +213,9 @@ flowchart TD
     EB -->|"InventoryReserved"| SS
     PS -->|"PaymentConfirmed event"| EB
     ISvc -->|"InventoryReserved event"| EB
+```
+
+> **Three C's lens:** This "After" design is an **Anthology (AEC)** saga — Asynchronous communication via the Event Bus, Eventual consistency (no compensation/rollback), and Choreographed coordination (no central orchestrator). This gives maximum decoupling but requires distributed tracing for observability. See [The Eight Saga Species](durable-execution-orchestration.md#the-eight-saga-species) for the full taxonomy.
 
     OS -.->|"HTTP: Check credit"| PS
     OS -.->|"HTTP: Get customer"| CSvc
@@ -460,8 +463,12 @@ public class OrderService
         await _orders.Save(order);
 
         // Publish event — other services react independently
+        // ✅ Named arguments weaken connascence of position → connascence of name
         await _mediator.Publish(new OrderSubmitted(
-            order.Id, request.CustomerId, request.Total, request.State
+            OrderId: order.Id,
+            CustomerId: request.CustomerId,
+            Total: request.Total,
+            State: request.State
         ));
 
         return new OrderResult(order.Id);
@@ -630,7 +637,7 @@ flowchart LR
 
 ## Scenario 4: Temporal Coupling in Synchronous Calls
 
-When services call each other synchronously, they create temporal coupling — both must be running at the same time.
+When services call each other synchronously, they create temporal coupling — both must be running at the same time. The "Before" example below is an **Epic (SAO)** saga — the most tightly coupled of the [Eight Saga Species](durable-execution-orchestration.md#the-eight-saga-species). The "After" refactoring moves toward **Parallel (AEO)** by introducing async communication via queues while maintaining orchestrated coordination. See [The Three C's of Distributed Transactions](durable-execution-orchestration.md#the-three-cs-of-distributed-transactions) for the full framework.
 
 ### ELI5
 
@@ -933,7 +940,7 @@ public class OrderDomainService(
             Quantity = request.Quantity,
             Total = request.Quantity * request.UnitPrice,
             Status = OrderStatus.Confirmed,
-        });
+        });  // ✅ Object initializer → connascence of name, not position
 
         // ✅ Reserve inventory via API
         await inventoryApi.ReserveAsync(request.ProductId, request.Quantity, order.Id);
@@ -991,6 +998,9 @@ public class OrderDomainService {
         }
 
         // ✅ Own domain logic — only writes to ORDER tables
+        // ⚠️ Connascence of position: Java records require positional construction.
+        //    A Builder or static factory with named params would weaken this
+        //    to connascence of name (see Hexagonal Architecture → Order.create).
         var order = orderRepo.create(new Order(
             request.customerId(),
             request.productId(),
@@ -1290,7 +1300,11 @@ public class CreateOrderHandler
 
         order.Confirm();
         await _orders.Save(order);
-        await _events.Publish(new OrderConfirmedEvent(order.Id, order.Total));
+        // ✅ Named arguments weaken connascence of position → connascence of name
+        await _events.Publish(new OrderConfirmedEvent(
+            OrderId: order.Id,
+            Total: order.Total
+        ));
 
         return order.Id;
     }
@@ -1328,7 +1342,10 @@ public class StripeGateway : IPaymentGateway
             Currency = "usd",
             Customer = customerId,
         });
-        return new PaymentResult(intent.Status == "succeeded", intent.Id);
+        return new PaymentResult(
+            intent.Status == "succeeded",  // ⚠️ connascence of meaning: magic string
+            intent.Id
+        );
     }
 }
 ```
@@ -1347,6 +1364,8 @@ public class Order {
 
     public static Order create(String customerId, List<OrderItem> items) {
         if (items.isEmpty()) throw new DomainException("Order must have items");
+        // Connascence of position in private constructor — acceptable
+        // because it's encapsulated within the aggregate (low distance).
         return new Order(UUID.randomUUID().toString(), customerId, items, OrderStatus.DRAFT);
     }
 
@@ -1404,6 +1423,8 @@ public class CreateOrderHandler {
 
         order.confirm();
         orders.save(order);
+        // ⚠️ Connascence of position — Java records require positional construction.
+        //    A builder or event factory would weaken to connascence of name.
         events.publish(new OrderConfirmedEvent(order.getId(), order.getTotal()));
 
         return order.getId();
@@ -1434,6 +1455,7 @@ public class StripePaymentGateway implements PaymentGateway {
 
     @Override
     public PaymentResult charge(String customerId, BigDecimal amount) {
+        // ✅ Builder pattern → connascence of name (not position)
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
             .setAmount(amount.multiply(new BigDecimal(100)).longValue())
             .setCurrency("usd")
@@ -1441,6 +1463,7 @@ public class StripePaymentGateway implements PaymentGateway {
             .build();
 
         PaymentIntent intent = PaymentIntent.create(params);
+        // ⚠️ connascence of meaning: "succeeded" is a magic string
         return new PaymentResult("succeeded".equals(intent.getStatus()), intent.getId());
     }
 }
@@ -1488,6 +1511,7 @@ Use this checklist during code reviews and architecture reviews:
 - [ ] **Shared Libraries**: Is a shared library forcing coordinated deployments? Consider Anti-Corruption Layers.
 - [ ] **Temporal Coupling**: Are synchronous call chains creating runtime coupling? Consider async events or [durable execution](durable-execution-orchestration.md).
 - [ ] **Architecture Tests**: Do you have ArchUnit / ArchUnitNET / dependency-cruiser rules enforcing boundaries?
+- [ ] **Connascence**: Can you weaken connascence — e.g., positional args → named args, magic strings → enums/constants, shared algorithms → contracts?
 
 ---
 

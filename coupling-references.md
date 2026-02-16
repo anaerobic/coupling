@@ -17,6 +17,7 @@
 | [**Thinking in Systems: A Primer**](https://amzn.to/4kZcSEu)                                                   | Donella Meadows                                            | Systems thinking foundations — understanding how component interactions create emergent behavior.                            |
 | [**Domain-Driven Design: Tackling Complexity in the Heart of Software**](https://www.amazon.com/dp/0321125215) | Eric Evans                                                 | The original DDD book — bounded contexts, ubiquitous language, subdomains.                                                   |
 | [**A Philosophy of Software Design**](https://www.amazon.com/dp/173210221X)                                    | John Ousterhout                                            | Deep modules, information hiding, complexity management.                                                                     |
+| [**What Every Programmer Should Know About Object-Oriented Design**](https://amzn.to/4bYH66g)                  | Meilir Page-Jones                                          | Introduces the connascence taxonomy — a fine-grained vocabulary for coupling in OO systems.                                  |
 
 ---
 
@@ -46,6 +47,7 @@
 - **[Temporal Decision Framework](https://kawofong.github.io/temporal-platform-hub/decision-framework)** — When to use (and not use) Temporal, good/bad use case criteria.
 - **[Saga Pattern with Temporal Whitepaper](https://pages.temporal.io/download-saga-pattern-made-easy)** — Detailed treatment of the Saga pattern in durable execution.
 - **[To Choreograph or Orchestrate Your Saga](https://temporal.io/blog/to-choreograph-or-orchestrate-your-saga-that-is-the-question)** — Temporal blog on saga topology tradeoffs.
+- **[An Epic Saga in Distributed Transactions](https://medium.com/better-programming/distributed-transactions-in-depth-f900875bbf6)** — Erik Ralston. The Three C's (Communication, Consistency, Coordination) applied to saga topology, from _Software Architecture: The Hard Parts_.
 - See also: **[Durable Execution & Orchestration](durable-execution-orchestration.md)** in this guide.
 
 ### Critical Perspectives
@@ -120,6 +122,15 @@ Check the [coupling.dev podcasts page](https://coupling.dev/posts/learning-resou
 | [Structure101](https://structure101.com/)                     | Visualize coupling and architecture                           |
 | [SonarQube](https://www.sonarqube.org/)                       | Code quality platform with coupling metrics                   |
 | [Spring Modulith](https://spring.io/projects/spring-modulith) | Module boundaries and interaction verification in Spring Boot |
+
+### Python
+
+| Tool                                                                    | Purpose                                                         |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [import-linter](https://github.com/seddonym/import-linter)             | Enforce dependency contracts between Python packages            |
+| [pydeps](https://github.com/thebjorn/pydeps)                           | Generate dependency graphs for Python modules                   |
+| [pytest-archon](https://github.com/jwbargsten/pytest-archon)           | Architecture tests for Python, inspired by ArchUnit             |
+| [radon](https://github.com/rubik/radon)                                | Cyclomatic complexity and coupling metrics                      |
 
 ---
 

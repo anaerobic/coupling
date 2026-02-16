@@ -277,7 +277,9 @@ public class OrderPipeline
             {
                 await inventory.Reserve(priced.OrderId);
                 return new OrderConfirmed(
-                    priced.OrderId, priced.FinalPrice, DateTime.UtcNow);
+                    OrderId: priced.OrderId,       // ✅ Named arguments weaken
+                    FinalPrice: priced.FinalPrice,  //    connascence of position
+                    ConfirmedAt: DateTime.UtcNow);  //    → connascence of name
             });
     }
 
@@ -465,7 +467,11 @@ public class ClusterListener : UntypedActor
 // ✅ Remote actor selection — same message contract, different machine
 // The ONLY thing that changes is the address, not the message types
 Context.ActorSelection("akka.tcp://OrderSystem@192.168.1.50:9000/user/orders")
-    .Tell(new ProcessOrder("ORD-42", "WIDGET-7", 3));
+    .Tell(new ProcessOrder(
+        OrderId: "ORD-42",       // ✅ Named arguments weaken
+        ProductId: "WIDGET-7",   //    connascence of position
+        Quantity: 3              //    → connascence of name
+    ));
 ```
 
 **Why clustering doesn't increase integration strength:**
@@ -539,6 +545,8 @@ public class OrderPipeline {
             .flatMap(priced -> Observable.fromCallable(() -> {
                 inventory.reserve(priced.orderId());
                 return new OrderConfirmed(priced.orderId(), priced.finalPrice(), Instant.now());
+                // ⚠️ Connascence of position — Java records require positional construction.
+                //    A builder or factory method would weaken to connascence of name.
             }));
 
         // ✅ Side-effects subscribe independently — no coupling to upstream logic
@@ -873,7 +881,7 @@ const _ = require("highland");
 // ✅ Processing pipeline — doesn't care if source is sync or async
 const processOrders = (orderStream) =>
   orderStream
-    .filter((order) => order.status === "pending")
+    .filter((order) => order.status === "pending") // ⚠️ connascence of meaning: magic string
     .map((order) => ({
       ...order,
       total: order.items.reduce((sum, item) => sum + item.price * item.qty, 0),
