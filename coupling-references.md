@@ -39,6 +39,15 @@
 - **[How to Use Module Coupling and Instability Metrics to Guide Refactoring](https://codinghelmet.com/articles/how-to-use-module-coupling-and-instability-metrics-to-guide-refactoring)** — Zoran Horvat. The clearest walkthrough of Ce, Ca, Instability metrics with before/after refactoring.
 - **[How to Measure Module Coupling and Instability Using NDepend](https://codinghelmet.com/articles/how-to-measure-module-coupling-and-instability-using-ndepend)** — Zoran Horvat. Practical tooling guide for .NET.
 
+### Durable Execution & Orchestration
+
+- **[Understanding Temporal](https://docs.temporal.io/evaluate/understanding-temporal)** — Core concepts: Durable Execution, Workflows, Activities, Workers, Event History.
+- **[Temporal Use Cases & Design Patterns](https://docs.temporal.io/evaluate/use-cases-design-patterns)** — Production use cases (transactions, business processes, AI agents) and patterns (Saga, State Machine).
+- **[Temporal Decision Framework](https://kawofong.github.io/temporal-platform-hub/decision-framework)** — When to use (and not use) Temporal, good/bad use case criteria.
+- **[Saga Pattern with Temporal Whitepaper](https://pages.temporal.io/download-saga-pattern-made-easy)** — Detailed treatment of the Saga pattern in durable execution.
+- **[To Choreograph or Orchestrate Your Saga](https://temporal.io/blog/to-choreograph-or-orchestrate-your-saga-that-is-the-question)** — Temporal blog on saga topology tradeoffs.
+- See also: **[Durable Execution & Orchestration](durable-execution-orchestration.md)** in this guide.
+
 ### Critical Perspectives
 
 - **[The Instability-Abstractness-Relationship — An Alternative View](https://odrotbohm.de/2024/09/the-instability-abstractness-relationsship-an-alternative-view/)** — Oliver Drotbohm. Critical analysis of why the abstractness metric can be misleading and how abstractness ≠ abstraction.
@@ -157,6 +166,9 @@ Check the [coupling.dev podcasts page](https://coupling.dev/posts/learning-resou
 | **Temporal Coupling**                    | Components must be available at the same time for the system to work                                   |
 | **Lifecycle Coupling**                   | Components must be built, tested, and deployed together                                                |
 | **Saga**                                 | A pattern for managing distributed transactions via a sequence of local transactions and compensations |
+| **Durable Execution**                    | A platform-managed guarantee that code runs to completion despite failures — state is persisted and replayed automatically (e.g. [Temporal](https://docs.temporal.io/evaluate/understanding-temporal)) |
+| **Workflow (Temporal)**                  | Deterministic business logic that orchestrates Activities, Signals, and Child Workflows with automatic state persistence |
+| **Activity (Temporal)**                  | A unit of work representing a side effect (API call, DB write) — the I/O boundary in durable execution |
 
 ---
 

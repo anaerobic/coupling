@@ -1486,9 +1486,9 @@ Use this checklist during code reviews and architecture reviews:
 - [ ] **Circular Dependencies**: Run `madge --circular` (TS), NDepend (C#), or JDepend (Java) to detect them.
 - [ ] **God Services**: Does any class have Ce > 5? Consider splitting by domain concern.
 - [ ] **Shared Libraries**: Is a shared library forcing coordinated deployments? Consider Anti-Corruption Layers.
-- [ ] **Temporal Coupling**: Are synchronous call chains creating runtime coupling? Consider async events.
+- [ ] **Temporal Coupling**: Are synchronous call chains creating runtime coupling? Consider async events or [durable execution](durable-execution-orchestration.md).
 - [ ] **Architecture Tests**: Do you have ArchUnit / ArchUnitNET / dependency-cruiser rules enforcing boundaries?
 
 ---
 
-[← Back to Main Guide](README.md) | [Next: Brownfield Strategies →](brownfield-strategies.md) | [References →](coupling-references.md)
+[← Back to Main Guide](README.md) | [Next: Brownfield Strategies →](brownfield-strategies.md) | [Durable Execution →](durable-execution-orchestration.md) | [References →](coupling-references.md)

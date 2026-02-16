@@ -1845,4 +1845,4 @@ These resources informed this guide. For the full reference list, see [coupling-
 
 ---
 
-[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md) | [→ References](coupling-references.md)
+[← Back to Main Guide](README.md) | [← Coupling in Practice](coupling-in-practice.md) | [Durable Execution →](durable-execution-orchestration.md) | [→ References](coupling-references.md)
