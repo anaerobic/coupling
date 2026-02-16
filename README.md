@@ -18,6 +18,7 @@ This tutorial is split across several focused documents. Start here for the big 
 | **[Dimensions of Coupling](coupling-dimensions.md)** | Integration Strength, Distance, Volatility — with code examples |
 | **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)** | Efferent/Afferent coupling, Instability, how to use metrics to guide refactoring |
 | **[Coupling in Practice](coupling-in-practice.md)** | Full TypeScript, C#, and Java examples — monoliths and distributed systems |
+| **[FRP & Coupling](functional-reactive-coupling.md)** | Observables (RxJS), Actor Model (XState), Highland streams — through the coupling lens |
 | **[Brownfield Strategies](brownfield-strategies.md)** | Strangler fig, service-based architecture, serverless extraction, API gateways |
 | **[References & Further Reading](coupling-references.md)** | Books, talks, articles, and podcasts |
 
@@ -218,8 +219,9 @@ flowchart TD
 | 1️⃣ | Read **[Dimensions of Coupling](coupling-dimensions.md)** to understand the three forces in detail |
 | 2️⃣ | Read **[Metrics & Refactoring](coupling-metrics-and-refactoring.md)** to learn how to measure and improve coupling |
 | 3️⃣ | Study **[Coupling in Practice](coupling-in-practice.md)** for real TypeScript, C#, and Java examples |
-| 4️⃣ | Apply **[Brownfield Strategies](brownfield-strategies.md)** to migrate existing monoliths and distributed monoliths |
-| 5️⃣ | Bookmark the **[References](coupling-references.md)** for ongoing learning |
+| 4️⃣ | Explore **[FRP & Coupling](functional-reactive-coupling.md)** to see how reactive streams, actors, and statecharts affect coupling |
+| 5️⃣ | Apply **[Brownfield Strategies](brownfield-strategies.md)** to migrate existing monoliths and distributed monoliths |
+| 6️⃣ | Bookmark the **[References](coupling-references.md)** for ongoing learning |
 
 ---
 
