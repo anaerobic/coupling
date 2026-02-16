@@ -30,24 +30,24 @@
 
 ## Phase 1: Identify Your Boundaries
 
-Before you can migrate anything, you need to know what the pieces are. Ford, Richards, Sadalage, and Dehghani describe two complementary approaches to identifying boundaries in *Software Architecture: The Hard Parts*:
+Before you can migrate anything, you need to know what the pieces are. Ford, Richards, Sadalage, and Dehghani describe two complementary approaches to identifying boundaries in _Software Architecture: The Hard Parts_:
 
 ```mermaid
 flowchart TD
     Start([Existing System]) --> Q1{Is the codebase<br/>reasonably modular?}
     Q1 -->|"Yes — identifiable<br/>components exist"| CBD[Component-Based<br/>Decomposition]
     Q1 -->|"No — big ball<br/>of mud"| TF[Tactical Forking]
-    
+
     CBD --> S1["Identify & size components"]
     S1 --> S2["Gather common domain components"]
     S2 --> S3["Flatten to create<br/>component domains"]
     S3 --> Boundaries["Identified domain boundaries"]
-    
+
     TF --> F1["Copy the entire codebase"]
     F1 --> F2["Each team deletes<br/>code they don't need"]
     F2 --> F3["Result: focused<br/>component services"]
     F3 --> Boundaries
-    
+
     Boundaries --> Phase2{Phase 2:<br/>Choose a migration strategy}
 
     style CBD fill:#69db7c,color:#000
@@ -55,7 +55,7 @@ flowchart TD
     style Boundaries fill:#e8e8e8,color:#000
 ```
 
-These are **analysis techniques**, not migration strategies. They answer *"what are the boundaries?"* — not *"how do we migrate?"* That question is answered in [Phase 2](#phase-2-choose-a-migration-strategy).
+These are **analysis techniques**, not migration strategies. They answer _"what are the boundaries?"_ — not _"how do we migrate?"_ That question is answered in [Phase 2](#phase-2-choose-a-migration-strategy).
 
 ### ELI5: Component Decomposition vs. Tactical Forking
 
@@ -75,13 +75,13 @@ If the monolith already has identifiable modules, packages, or namespaces that m
 
 ### Tactical Forking
 
-If the codebase is a "big ball of mud" with no clear boundaries, the *Hard Parts* authors describe **tactical forking**: copy the entire monolith for each team, then have each team delete the code they don't need. This sounds crude, but it can be the fastest path to separation when no seams exist.
+If the codebase is a "big ball of mud" with no clear boundaries, the _Hard Parts_ authors describe **tactical forking**: copy the entire monolith for each team, then have each team delete the code they don't need. This sounds crude, but it can be the fastest path to separation when no seams exist.
 
-The approach is described in detail by Dehghani: each fork starts as a complete copy. Teams then remove what they don't own, leaving behind focused services that can be cleaned up independently. The key insight is that *deleting code is safer and easier than extracting code* from a tangled codebase.
+The approach is described in detail by Dehghani: each fork starts as a complete copy. Teams then remove what they don't own, leaving behind focused services that can be cleaned up independently. The key insight is that _deleting code is safer and easier than extracting code_ from a tangled codebase.
 
 ### Sizing Your Components
 
-The *Hard Parts* authors recommend measuring component size by **total number of statements**. Components that are 1–2 standard deviations from the mean are well-sized. Outliers in either direction are candidates for splitting or merging.
+The _Hard Parts_ authors recommend measuring component size by **total number of statements**. Components that are 1–2 standard deviations from the mean are well-sized. Outliers in either direction are candidates for splitting or merging.
 
 **Granularity Disintegrators** (reasons to split):
 | Driver | Signal |
@@ -128,7 +128,7 @@ The strangler fig pattern — named by Martin Fowler after a tree that grows aro
 
 ### How It Works
 
-The pattern requires a **façade** — an intercepting layer that sits between clients and the monolith and routes traffic. In modern implementations this façade is typically an **API gateway** (e.g., Kong, AWS API Gateway, Azure API Management) or a **reverse proxy** (e.g., YARP, Envoy, nginx, Spring Cloud Gateway). The gateway isn't a separate strategy — it's the *mechanism* that makes strangler fig work.
+The pattern requires a **façade** — an intercepting layer that sits between clients and the monolith and routes traffic. In modern implementations this façade is typically an **API gateway** (e.g., Kong, AWS API Gateway, Azure API Management) or a **reverse proxy** (e.g., YARP, Envoy, nginx, Spring Cloud Gateway). The gateway isn't a separate strategy — it's the _mechanism_ that makes strangler fig work.
 
 ```mermaid
 flowchart LR
@@ -146,7 +146,7 @@ flowchart LR
         GW2 -->|"Everything else"| M2[Monolith]
         NS -.->|"ACL"| M2
     end
-    
+
     style NS fill:#69db7c,color:#000
 ```
 
@@ -158,7 +158,7 @@ flowchart LR
         GW3 -->|"Feature B"| NS4[Service B]
         GW3 -->|"Legacy"| M3[Monolith<br/>shrinking]
     end
-    
+
     style NS3 fill:#69db7c,color:#000
     style NS4 fill:#69db7c,color:#000
     style M3 fill:#ffcccc,color:#000
@@ -168,13 +168,13 @@ flowchart LR
 
 The API gateway does more than route. In a brownfield migration it can also:
 
-| Capability | How It Helps Migration |
-|---|---|
-| **Path-based routing** | Direct migrated endpoints to new services, leave the rest on the monolith |
-| **Response transformation** | Translate between the monolith's legacy API shape and the new contract — clients never see the difference |
-| **API versioning** | Run `/v1/orders` on the monolith and `/v2/orders` on the new service simultaneously |
-| **Auth offload** | Centralize authentication so new services don't need to replicate the monolith's auth logic |
-| **Rate limiting / circuit breaking** | Protect new services from traffic spikes during gradual rollout |
+| Capability                           | How It Helps Migration                                                                                    |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| **Path-based routing**               | Direct migrated endpoints to new services, leave the rest on the monolith                                 |
+| **Response transformation**          | Translate between the monolith's legacy API shape and the new contract — clients never see the difference |
+| **API versioning**                   | Run `/v1/orders` on the monolith and `/v2/orders` on the new service simultaneously                       |
+| **Auth offload**                     | Centralize authentication so new services don't need to replicate the monolith's auth logic               |
+| **Rate limiting / circuit breaking** | Protect new services from traffic spikes during gradual rollout                                           |
 
 **Route-Level Migration** — gateway as the strangler façade:
 
@@ -183,25 +183,25 @@ The API gateway does more than route. In a brownfield migration it can also:
 export const routes: RouteConfig[] = [
   // ✅ Migrated: orders go to new service
   {
-    path: '/api/orders/**',
-    upstream: 'http://order-service:3001',
-    transforms: [stripPrefix('/api')],
+    path: "/api/orders/**",
+    upstream: "http://order-service:3001",
+    transforms: [stripPrefix("/api")],
   },
   // 🔄 In progress: read from new, write to old (parallel run)
   {
-    path: '/api/customers',
-    method: 'GET',
-    upstream: 'http://customer-service:3002',
+    path: "/api/customers",
+    method: "GET",
+    upstream: "http://customer-service:3002",
   },
   {
-    path: '/api/customers',
-    method: 'POST',
-    upstream: 'http://monolith:8080',  // writes still go to monolith
+    path: "/api/customers",
+    method: "POST",
+    upstream: "http://monolith:8080", // writes still go to monolith
   },
   // ⏳ Not yet migrated: falls through to monolith
   {
-    path: '/api/**',
-    upstream: 'http://monolith:8080',
+    path: "/api/**",
+    upstream: "http://monolith:8080",
   },
 ];
 ```
@@ -222,14 +222,16 @@ interface MonolithCustomerShape {
 interface NewCustomerShape {
   id: string;
   name: string;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
 }
 
-export function transformCustomerResponse(body: MonolithCustomerShape): NewCustomerShape {
+export function transformCustomerResponse(
+  body: MonolithCustomerShape,
+): NewCustomerShape {
   return {
     id: String(body.cust_id),
     name: body.cust_name,
-    status: body.is_active === 1 ? 'active' : 'inactive',
+    status: body.is_active === 1 ? "active" : "inactive",
   };
 }
 ```
@@ -240,14 +242,14 @@ export function transformCustomerResponse(body: MonolithCustomerShape): NewCusto
 flowchart TD
     WEB[Web App] --> BFF_W[Web BFF]
     MOB[Mobile App] --> BFF_M[Mobile BFF]
-    
+
     BFF_W --> OS[Order Service]
     BFF_W --> CS[Customer Service]
     BFF_W --> M[Monolith]
-    
+
     BFF_M --> OS
     BFF_M --> M
-    
+
     style BFF_W fill:#ffd43b,color:#000
     style BFF_M fill:#ffd43b,color:#000
 ```
@@ -258,41 +260,47 @@ During migration, the new service often still needs data from the monolith. The 
 
 ### Coupling Analysis
 
-| Dimension | Value | Why |
-|---|---|---|
-| Integration Strength | 🟢 Contract | Proxy routes by contract; ACL translates models |
-| Distance | 🟡 Medium | New service is separate but still talks to monolith during transition |
-| Volatility | 🟢 Low-per-step | Each step changes one feature boundary at a time |
-| **Verdict** | ✅ | **Incremental risk — each step is independently deployable and reversible** |
+| Dimension            | Value           | Why                                                                         |
+| -------------------- | --------------- | --------------------------------------------------------------------------- |
+| Integration Strength | 🟢 Contract     | Proxy routes by contract; ACL translates models                             |
+| Distance             | 🟡 Medium       | New service is separate but still talks to monolith during transition       |
+| Volatility           | 🟢 Low-per-step | Each step changes one feature boundary at a time                            |
+| **Verdict**          | ✅              | **Incremental risk — each step is independently deployable and reversible** |
 
 ### TypeScript — Strangler Proxy
 
 ```typescript
 // strangler-proxy/src/proxy.ts
-import express from 'express';
-import httpProxy from 'http-proxy-middleware';
+import express from "express";
+import httpProxy from "http-proxy-middleware";
 
 const app = express();
 
 // Route configuration: which features have been migrated
 const migratedRoutes: Record<string, string> = {
-  '/api/orders':    'http://order-service:3001',
-  '/api/inventory': 'http://inventory-service:3002',
+  "/api/orders": "http://order-service:3001",
+  "/api/inventory": "http://inventory-service:3002",
   // Add more as each feature is strangled out
 };
 
 // Migrated features go to new services
 for (const [path, target] of Object.entries(migratedRoutes)) {
-  app.use(path, httpProxy.createProxyMiddleware({ target, changeOrigin: true }));
+  app.use(
+    path,
+    httpProxy.createProxyMiddleware({ target, changeOrigin: true }),
+  );
 }
 
 // Everything else falls through to the monolith
-app.use('/', httpProxy.createProxyMiddleware({
-  target: 'http://monolith:8080',
-  changeOrigin: true,
-}));
+app.use(
+  "/",
+  httpProxy.createProxyMiddleware({
+    target: "http://monolith:8080",
+    changeOrigin: true,
+  }),
+);
 
-app.listen(3000, () => console.log('Strangler proxy on :3000'));
+app.listen(3000, () => console.log("Strangler proxy on :3000"));
 ```
 
 ```typescript
@@ -303,8 +311,8 @@ interface MonolithCustomerResponse {
   cust_id: number;
   cust_name: string;
   cust_email: string;
-  credit_lmt: number;           // monolith naming conventions
-  acct_status: 'A' | 'I' | 'S'; // Active, Inactive, Suspended — legacy codes
+  credit_lmt: number; // monolith naming conventions
+  acct_status: "A" | "I" | "S"; // Active, Inactive, Suspended — legacy codes
 }
 
 // Our domain model — clean and intentional
@@ -313,18 +321,22 @@ interface Customer {
   name: string;
   email: string;
   creditLimit: number;
-  status: 'active' | 'inactive' | 'suspended';
+  status: "active" | "inactive" | "suspended";
 }
 
-const STATUS_MAP: Record<string, Customer['status']> = {
-  A: 'active', I: 'inactive', S: 'suspended',
+const STATUS_MAP: Record<string, Customer["status"]> = {
+  A: "active",
+  I: "inactive",
+  S: "suspended",
 };
 
 export class MonolithCustomerAdapter {
   constructor(private monolithBaseUrl: string) {}
 
   async getCustomer(customerId: string): Promise<Customer> {
-    const res = await fetch(`${this.monolithBaseUrl}/internal/customers/${customerId}`);
+    const res = await fetch(
+      `${this.monolithBaseUrl}/internal/customers/${customerId}`,
+    );
     const raw: MonolithCustomerResponse = await res.json();
 
     // ✅ Translate at the boundary — monolith model stops here
@@ -333,7 +345,7 @@ export class MonolithCustomerAdapter {
       name: raw.cust_name,
       email: raw.cust_email,
       creditLimit: raw.credit_lmt,
-      status: STATUS_MAP[raw.acct_status] ?? 'inactive',
+      status: STATUS_MAP[raw.acct_status] ?? "inactive",
     };
   }
 }
@@ -375,9 +387,15 @@ app.Run();
       }
     },
     "Clusters": {
-      "order-service":    { "Destinations": { "d1": { "Address": "http://order-service:5001" } } },
-      "inventory-service":{ "Destinations": { "d1": { "Address": "http://inventory-service:5002" } } },
-      "monolith":         { "Destinations": { "d1": { "Address": "http://monolith:8080" } } }
+      "order-service": {
+        "Destinations": { "d1": { "Address": "http://order-service:5001" } }
+      },
+      "inventory-service": {
+        "Destinations": { "d1": { "Address": "http://inventory-service:5002" } }
+      },
+      "monolith": {
+        "Destinations": { "d1": { "Address": "http://monolith:8080" } }
+      }
     }
   }
 }
@@ -519,12 +537,12 @@ public class MonolithCustomerAdapter {
 
 ### When to Use Strangler Fig
 
-| ✅ Good Fit | ❌ Poor Fit |
-|---|---|
-| Monolith has identifiable feature boundaries | System is a pure big ball of mud with no seams |
-| You can place a proxy in front of the monolith | Traffic cannot be intercepted (e.g., batch jobs, embedded systems) |
-| Team can own one feature end-to-end | Features are deeply entangled in shared database logic |
-| You need to keep the system live during migration | The entire system must be replaced at once (rare, but it happens) |
+| ✅ Good Fit                                       | ❌ Poor Fit                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| Monolith has identifiable feature boundaries      | System is a pure big ball of mud with no seams                     |
+| You can place a proxy in front of the monolith    | Traffic cannot be intercepted (e.g., batch jobs, embedded systems) |
+| Team can own one feature end-to-end               | Features are deeply entangled in shared database logic             |
+| You need to keep the system live during migration | The entire system must be replaced at once (rare, but it happens)  |
 
 ---
 
@@ -536,7 +554,7 @@ Branch by Abstraction is the internal counterpart to the strangler fig. Instead 
 
 > 🔌 **Imagine an electrical adapter.**
 >
-> You're upgrading all the outlets in your house from two-prong to three-prong. You can't rip them all out at once — you'd have no power. Instead, you install universal adapters that accept *both* plug types. Then you swap each outlet one by one. When they're all done, you remove the adapters. The adapters are the abstraction layer — they let old and new coexist safely.
+> You're upgrading all the outlets in your house from two-prong to three-prong. You can't rip them all out at once — you'd have no power. Instead, you install universal adapters that accept _both_ plug types. Then you swap each outlet one by one. When they're all done, you remove the adapters. The adapters are the abstraction layer — they let old and new coexist safely.
 
 ### How It Works
 
@@ -545,24 +563,24 @@ flowchart TD
     subgraph Step1 ["Step 1: Create Abstraction"]
         C1[Client Code] --> OLD1[Old Implementation]
     end
-    
+
     subgraph Step2 ["Step 2: Redirect Through Abstraction"]
         C2[Client Code] --> ABS2[Abstraction Layer]
         ABS2 --> OLD2[Old Implementation]
     end
-    
+
     subgraph Step3 ["Step 3: Build New, Swap Incrementally"]
         C3[Client Code] --> ABS3[Abstraction Layer]
         ABS3 -.->|"some calls"| OLD3[Old Implementation]
         ABS3 -->|"some calls"| NEW3[New Implementation]
     end
-    
+
     subgraph Step4 ["Step 4: Complete & Remove"]
         C4[Client Code] --> NEW4[New Implementation]
     end
-    
+
     Step1 --> Step2 --> Step3 --> Step4
-    
+
     style OLD1 fill:#ff6b6b,color:#fff
     style OLD2 fill:#ff6b6b,color:#fff
     style OLD3 fill:#ffcccc,color:#000
@@ -596,7 +614,11 @@ GitHub needed to rewrite a critical part of their platform (the merge system) wi
 
 // abstractions/pricing.ts — the abstraction layer
 export interface PricingEngine {
-  calculatePrice(productId: string, quantity: number, customerId: string): Promise<number>;
+  calculatePrice(
+    productId: string,
+    quantity: number,
+    customerId: string,
+  ): Promise<number>;
   calculateDiscount(customerId: string, orderTotal: number): Promise<number>;
 }
 
@@ -607,7 +629,10 @@ export class LegacyPricingEngine implements PricingEngine {
     return this.legacyPricingModule.getPrice(productId) * quantity;
   }
 
-  async calculateDiscount(customerId: string, orderTotal: number): Promise<number> {
+  async calculateDiscount(
+    customerId: string,
+    orderTotal: number,
+  ): Promise<number> {
     return this.legacyDiscountTable.lookup(customerId, orderTotal);
   }
 }
@@ -621,7 +646,10 @@ export class NewPricingEngine implements PricingEngine {
     return rules.apply(quantity);
   }
 
-  async calculateDiscount(customerId: string, orderTotal: number): Promise<number> {
+  async calculateDiscount(
+    customerId: string,
+    orderTotal: number,
+  ): Promise<number> {
     const tier = await this.pricingRules.getCustomerTier(customerId);
     return tier.calculateDiscount(orderTotal);
   }
@@ -630,7 +658,7 @@ export class NewPricingEngine implements PricingEngine {
 // Step 3: Toggle between implementations
 // pricing-factory.ts
 export function createPricingEngine(featureFlags: FeatureFlags): PricingEngine {
-  if (featureFlags.isEnabled('new-pricing-engine')) {
+  if (featureFlags.isEnabled("new-pricing-engine")) {
     return new NewPricingEngine(new PricingRuleRepository());
   }
   return new LegacyPricingEngine();
@@ -768,43 +796,43 @@ public class PricingConfig {
 
 ### Coupling Analysis
 
-| Dimension | Value | Why |
-|---|---|---|
-| Integration Strength | 🟢 Contract | Callers depend on the abstraction (interface), not the implementation |
-| Distance | 🟢 Low | Both implementations live within the same codebase / deployable |
-| Volatility | 🟢 Low-per-step | Each swap is a small, reversible change behind a feature flag |
-| **Verdict** | ✅ | **Lowest-risk migration — no network boundary, no proxy, just swap implementations** |
+| Dimension            | Value           | Why                                                                                  |
+| -------------------- | --------------- | ------------------------------------------------------------------------------------ |
+| Integration Strength | 🟢 Contract     | Callers depend on the abstraction (interface), not the implementation                |
+| Distance             | 🟢 Low          | Both implementations live within the same codebase / deployable                      |
+| Volatility           | 🟢 Low-per-step | Each swap is a small, reversible change behind a feature flag                        |
+| **Verdict**          | ✅              | **Lowest-risk migration — no network boundary, no proxy, just swap implementations** |
 
 ### When to Use Branch by Abstraction
 
-| ✅ Good Fit | ❌ Poor Fit |
-|---|---|
-| Replacing an internal component (ORM, framework, pricing engine) | Splitting a monolith into separately deployed services |
-| Changes need to be spread across many commits | Quick replacement of a small utility |
-| Team practices trunk-based development | Component has no clear API or interface boundary |
-| Traffic cannot be intercepted externally (batch jobs, libraries) | You're migrating to a different language or runtime |
-| You want to run old and new in parallel to compare results | The old and new components are in different repositories |
+| ✅ Good Fit                                                      | ❌ Poor Fit                                              |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| Replacing an internal component (ORM, framework, pricing engine) | Splitting a monolith into separately deployed services   |
+| Changes need to be spread across many commits                    | Quick replacement of a small utility                     |
+| Team practices trunk-based development                           | Component has no clear API or interface boundary         |
+| Traffic cannot be intercepted externally (batch jobs, libraries) | You're migrating to a different language or runtime      |
+| You want to run old and new in parallel to compare results       | The old and new components are in different repositories |
 
 ---
 
 ### Comparing the Two Strategies
 
-| | Strangler Fig | Branch by Abstraction |
-|---|---|---|
-| **Where it operates** | External — API/network boundary | Internal — within the codebase |
-| **Mechanism** | Proxy/façade redirects traffic | Abstraction layer swaps implementations |
-| **Best for** | Extracting features to separate services | Replacing internal components in-place |
-| **Requires** | Network proxy or API gateway | Feature flags and interface/abstraction design |
-| **Result** | New services alongside the monolith | New implementation inside the same deployable (initially) |
-| **Can be combined?** | Yes — use both on the same monolith for different concerns |
+|                       | Strangler Fig                                              | Branch by Abstraction                                     |
+| --------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| **Where it operates** | External — API/network boundary                            | Internal — within the codebase                            |
+| **Mechanism**         | Proxy/façade redirects traffic                             | Abstraction layer swaps implementations                   |
+| **Best for**          | Extracting features to separate services                   | Replacing internal components in-place                    |
+| **Requires**          | Network proxy or API gateway                               | Feature flags and interface/abstraction design            |
+| **Result**            | New services alongside the monolith                        | New implementation inside the same deployable (initially) |
+| **Can be combined?**  | Yes — use both on the same monolith for different concerns |
 
-> 💡 **These strategies are not mutually exclusive.** You might use **strangler fig** to extract high-traffic API routes to new services while using **branch by abstraction** to replace the ORM or pricing engine internally. The choice depends on whether the boundary you're changing is *external* (API routes, service boundaries) or *internal* (libraries, frameworks, domain logic).
+> 💡 **These strategies are not mutually exclusive.** You might use **strangler fig** to extract high-traffic API routes to new services while using **branch by abstraction** to replace the ORM or pricing engine internally. The choice depends on whether the boundary you're changing is _external_ (API routes, service boundaries) or _internal_ (libraries, frameworks, domain logic).
 
 ---
 
 ## Phase 3: Choose a Target Architecture Style
 
-Strategies (Phase 2) tell you *how* to migrate. Architecture styles tell you *where you're going*. From Mark Richards' Architecture Styles Worksheet, key styles for brownfield teams include:
+Strategies (Phase 2) tell you _how_ to migrate. Architecture styles tell you _where you're going_. From Mark Richards' Architecture Styles Worksheet, key styles for brownfield teams include:
 
 ```mermaid
 flowchart LR
@@ -812,7 +840,7 @@ flowchart LR
     MON -->|"Extract fine-grained<br/>services"| MS[Microservices]
     SBA -->|"Split shared DB<br/>when ready"| MS
     SBA -->|"Stay here if<br/>it's working ✅"| SBA
-    
+
     style MON fill:#ff6b6b,color:#fff
     style SBA fill:#4dabf7,color:#fff
     style MS fill:#69db7c,color:#000
@@ -820,12 +848,12 @@ flowchart LR
 
 You can reach either target using either migration strategy. The target is orthogonal to the migration approach:
 
-| | Strangler Fig | Branch by Abstraction |
-|---|---|---|
-| **→ Service-Based Architecture** | Extract routes to coarse-grained domain services behind a gateway | Introduce service abstractions internally, then extract when ready |
-| **→ Microservices** | Extract routes to fine-grained services with independent databases | Swap components internally first, then break apart the deployable |
+|                                  | Strangler Fig                                                      | Branch by Abstraction                                              |
+| -------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| **→ Service-Based Architecture** | Extract routes to coarse-grained domain services behind a gateway  | Introduce service abstractions internally, then extract when ready |
+| **→ Microservices**              | Extract routes to fine-grained services with independent databases | Swap components internally first, then break apart the deployable  |
 
-> **Key insight from Richards:** Service-based architecture is not a compromise or a failure to achieve microservices. For many organizations, it *is* the right target architecture. Don't pursue microservices unless the tradeoffs justify it. Every additional service is a tax on your team's cognitive load.
+> **Key insight from Richards:** Service-based architecture is not a compromise or a failure to achieve microservices. For many organizations, it _is_ the right target architecture. Don't pursue microservices unless the tradeoffs justify it. Every additional service is a tax on your team's cognitive load.
 
 ### Service-Based Architecture
 
@@ -846,20 +874,20 @@ Mark Richards describes **service-based architecture** as a pragmatic middle gro
 ```mermaid
 flowchart TD
     UI[User Interface Layer]
-    
+
     UI --> OS[Order Service]
     UI --> CS[Customer Service]
     UI --> IS[Inventory Service]
     UI --> RS[Reporting Service]
-    
+
     OS --> DB[(Shared Database)]
     CS --> DB
     IS --> DB
     RS --> DB
-    
+
     OS -.->|"Internal API"| CS
     OS -.->|"Internal API"| IS
-    
+
     style OS fill:#4dabf7,color:#fff
     style CS fill:#4dabf7,color:#fff
     style IS fill:#4dabf7,color:#fff
@@ -868,12 +896,12 @@ flowchart TD
 
 #### Coupling Analysis
 
-| Dimension | Value | Why |
-|---|---|---|
-| Integration Strength | 🟡 Model | Services share the database schema (model coupling), but each owns its tables |
-| Distance | 🟢 Low-Medium | Separate deployments but same infrastructure |
-| Volatility | 🟡 Medium | Core domains change independently but share data model |
-| **Verdict** | ✅ | **Pragmatic balance — less coupling than monolith, less overhead than microservices** |
+| Dimension            | Value         | Why                                                                                   |
+| -------------------- | ------------- | ------------------------------------------------------------------------------------- |
+| Integration Strength | 🟡 Model      | Services share the database schema (model coupling), but each owns its tables         |
+| Distance             | 🟢 Low-Medium | Separate deployments but same infrastructure                                          |
+| Volatility           | 🟡 Medium     | Core domains change independently but share data model                                |
+| **Verdict**          | ✅            | **Pragmatic balance — less coupling than monolith, less overhead than microservices** |
 
 #### Key Design Rules (from Richards)
 
@@ -890,7 +918,7 @@ flowchart TD
 
 export class OrderService {
   constructor(
-    private orderRepo: OrderRepository,        // own tables in shared DB
+    private orderRepo: OrderRepository, // own tables in shared DB
     private customerApi: CustomerServiceClient, // internal HTTP call
     private inventoryApi: InventoryServiceClient,
   ) {}
@@ -898,16 +926,19 @@ export class OrderService {
   async placeOrder(request: PlaceOrderRequest): Promise<Order> {
     // ✅ Service boundary — call customer service's API, not its tables
     const customer = await this.customerApi.getCustomer(request.customerId);
-    if (customer.status !== 'active') {
+    if (customer.status !== "active") {
       throw new Error(`Customer ${request.customerId} is not active`);
     }
 
     // ✅ Service boundary — call inventory service's API
     const available = await this.inventoryApi.checkAvailability(
-      request.productId, request.quantity
+      request.productId,
+      request.quantity,
     );
     if (!available) {
-      throw new Error(`Insufficient inventory for product ${request.productId}`);
+      throw new Error(
+        `Insufficient inventory for product ${request.productId}`,
+      );
     }
 
     // Own domain logic stays local
@@ -916,11 +947,15 @@ export class OrderService {
       productId: request.productId,
       quantity: request.quantity,
       total: request.quantity * request.unitPrice,
-      status: 'confirmed',
+      status: "confirmed",
     });
 
     // ✅ Reserve inventory via API (not by writing to inventory tables)
-    await this.inventoryApi.reserve(request.productId, request.quantity, order.id);
+    await this.inventoryApi.reserve(
+      request.productId,
+      request.quantity,
+      order.id,
+    );
 
     return order;
   }
@@ -1026,13 +1061,13 @@ public class OrderDomainService {
 
 #### When to Choose Service-Based Architecture
 
-| ✅ Good Fit | ❌ Poor Fit |
-|---|---|
-| Team of 5–25 engineers | Team of 100+ requiring independent deployment cadences |
-| Limited DevOps maturity or infrastructure budget | Mature platform team with full CI/CD, observability, and service mesh |
-| You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features |
-| Your monolith has identifiable domain boundaries | Your system has no domain cohesion — it's a big ball of mud |
-| You want an evolutionary stepping stone toward microservices | You're building a greenfield system with clear bounded contexts |
+| ✅ Good Fit                                                        | ❌ Poor Fit                                                           |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Team of 5–25 engineers                                             | Team of 100+ requiring independent deployment cadences                |
+| Limited DevOps maturity or infrastructure budget                   | Mature platform team with full CI/CD, observability, and service mesh |
+| You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features                       |
+| Your monolith has identifiable domain boundaries                   | Your system has no domain cohesion — it's a big ball of mud           |
+| You want an evolutionary stepping stone toward microservices       | You're building a greenfield system with clear bounded contexts       |
 
 ### Microservices
 
@@ -1042,12 +1077,12 @@ The key question for brownfield teams is: **do your business drivers actually re
 
 #### When Microservices Are Worth the Cost
 
-| Business Driver | Why Microservices Help |
-|---|---|
-| Independent team deployment cadences | Each team ships on its own schedule without coordinating |
-| Elastic scaling of individual features | High-traffic features scale independently of low-traffic ones |
-| Polyglot technology requirements | Different services can use different languages, frameworks, or data stores |
-| Regulatory isolation | Sensitive data can be physically isolated in a single service |
+| Business Driver                        | Why Microservices Help                                                     |
+| -------------------------------------- | -------------------------------------------------------------------------- |
+| Independent team deployment cadences   | Each team ships on its own schedule without coordinating                   |
+| Elastic scaling of individual features | High-traffic features scale independently of low-traffic ones              |
+| Polyglot technology requirements       | Different services can use different languages, frameworks, or data stores |
+| Regulatory isolation                   | Sensitive data can be physically isolated in a single service              |
 
 > ⚠️ **If you don't have these drivers, service-based architecture is almost certainly the better target.** Microservices are not the default — they are the option you earn when the tradeoffs justify the complexity.
 
@@ -1055,7 +1090,7 @@ The key question for brownfield teams is: **do your business drivers actually re
 
 ## Enabling Tactics
 
-Strangler Fig and Branch by Abstraction are *migration strategies*. Service-Based Architecture and Microservices are *target styles*. The following are *tactics* — reusable mechanisms you deploy *within* any strategy to reach any target. They compose freely.
+Strangler Fig and Branch by Abstraction are _migration strategies_. Service-Based Architecture and Microservices are _target styles_. The following are _tactics_ — reusable mechanisms you deploy _within_ any strategy to reach any target. They compose freely.
 
 ```mermaid
 flowchart TD
@@ -1063,7 +1098,7 @@ flowchart TD
         SF[Strangler Fig]
         BBA[Branch by<br/>Abstraction]
     end
-    
+
     subgraph Tactics ["Enabling Tactics"]
         GW[API Gateway /<br/>Reverse Proxy]
         SL[Serverless<br/>Functions]
@@ -1072,7 +1107,7 @@ flowchart TD
         FF[Feature Flags]
         SIDE[Sidecars /<br/>Service Mesh]
     end
-    
+
     SF --- GW
     SF --- SL
     SF --- ACL
@@ -1081,7 +1116,7 @@ flowchart TD
     BBA --- ACL
     BBA --- EI
     BBA --- SIDE
-    
+
     style SF fill:#4dabf7,color:#fff
     style BBA fill:#4dabf7,color:#fff
     style GW fill:#ffd43b,color:#000
@@ -1094,7 +1129,7 @@ flowchart TD
 
 ### API Gateways and Reverse Proxies
 
-As covered in [Strategy 1: Strangler Fig](#strategy-1-strangler-fig), the API gateway is the *façade* that the strangler fig pattern requires. It is equally useful in any target architecture — as a single entry point that routes to domain services and provides centralized auth, rate limiting, and observability.
+As covered in [Strategy 1: Strangler Fig](#strategy-1-strangler-fig), the API gateway is the _façade_ that the strangler fig pattern requires. It is equally useful in any target architecture — as a single entry point that routes to domain services and provides centralized auth, rate limiting, and observability.
 
 The gateway's fundamental role: **it decouples clients from the internal structure of the backend.** When you later split a service, move a feature, or swap a deployment topology, clients are unaffected.
 
@@ -1109,7 +1144,7 @@ Feature flags are essential to [Branch by Abstraction](#strategy-2-branch-by-abs
 
 ### Serverless as a Deployment Target
 
-Serverless (AWS Lambda, Azure Functions, Google Cloud Functions) is not a migration strategy. It is a **deployment topology** — a way to run code that you have already decided to extract. You still need a strategy (strangler fig or branch by abstraction) to decide *what* to extract and *when*.
+Serverless (AWS Lambda, Azure Functions, Google Cloud Functions) is not a migration strategy. It is a **deployment topology** — a way to run code that you have already decided to extract. You still need a strategy (strangler fig or branch by abstraction) to decide _what_ to extract and _when_.
 
 ### ELI5
 
@@ -1119,7 +1154,7 @@ Serverless (AWS Lambda, Azure Functions, Google Cloud Functions) is not a migrat
 
 ### When Serverless Fits: The Semantic Complexity Test
 
-Ford et al. in *Software Architecture: The Hard Parts* describe **architectural quantum** as "an independently deployable artifact with high functional cohesion, high static coupling, and synchronous dynamic coupling." A serverless function is the smallest possible quantum.
+Ford et al. in _Software Architecture: The Hard Parts_ describe **architectural quantum** as "an independently deployable artifact with high functional cohesion, high static coupling, and synchronous dynamic coupling." A serverless function is the smallest possible quantum.
 
 Serverless is a good extraction target when the workload has **low semantic complexity** — meaning the logic is straightforward, event-driven, and stateless:
 
@@ -1131,7 +1166,7 @@ flowchart TD
     Q2 -->|No| BAD2[Keep in service<br/>or monolith]
     Q3 -->|Yes| GOOD[Good serverless<br/>candidate ✅]
     Q3 -->|No| MAYBE["Maybe — consider<br/>workflow orchestration"]
-    
+
     style GOOD fill:#69db7c,color:#000
     style BAD1 fill:#ffcccc,color:#000
     style BAD2 fill:#ffcccc,color:#000
@@ -1139,22 +1174,22 @@ flowchart TD
 
 ### Good Serverless Extraction Candidates
 
-| Workload | Why It Fits |
-|---|---|
-| Image/file processing | Event-driven (upload trigger), stateless, CPU-burst |
-| Webhook handlers | Inbound events, simple routing/transformation |
-| Notification dispatch | Event-driven, fire-and-forget, independent scaling |
-| Scheduled reports/ETL | Periodic trigger, batch processing, no persistent state |
-| Data validation/enrichment | Stateless transformation in a pipeline |
+| Workload                   | Why It Fits                                             |
+| -------------------------- | ------------------------------------------------------- |
+| Image/file processing      | Event-driven (upload trigger), stateless, CPU-burst     |
+| Webhook handlers           | Inbound events, simple routing/transformation           |
+| Notification dispatch      | Event-driven, fire-and-forget, independent scaling      |
+| Scheduled reports/ETL      | Periodic trigger, batch processing, no persistent state |
+| Data validation/enrichment | Stateless transformation in a pipeline                  |
 
 ### Poor Serverless Candidates
 
-| Workload | Why It Doesn't Fit |
-|---|---|
-| Complex transactional workflows | Need ACID or saga coordination across multiple steps |
-| Long-running processes | Cold starts and execution time limits |
-| High-throughput, steady-state processing | Per-invocation cost exceeds always-on compute |
-| Stateful domain logic | Managing state across invocations adds accidental complexity |
+| Workload                                 | Why It Doesn't Fit                                           |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| Complex transactional workflows          | Need ACID or saga coordination across multiple steps         |
+| Long-running processes                   | Cold starts and execution time limits                        |
+| High-throughput, steady-state processing | Per-invocation cost exceeds always-on compute                |
+| Stateful domain logic                    | Managing state across invocations adds accidental complexity |
 
 ### Example: Extracting Side-Effects to Serverless within a Strangler Fig
 
@@ -1179,7 +1214,7 @@ class OrderController {
 // The order service publishes an event; each function triggers independently
 
 // functions/send-order-confirmation/handler.ts
-import { SQSEvent } from 'aws-lambda';
+import { SQSEvent } from "aws-lambda";
 
 interface OrderPlacedEvent {
   orderId: string;
@@ -1195,7 +1230,7 @@ export async function handler(event: SQSEvent): Promise<void> {
     await sendEmail({
       to: orderEvent.customerEmail,
       subject: `Order ${orderEvent.orderId} confirmed`,
-      template: 'order-confirmation',
+      template: "order-confirmation",
       data: orderEvent,
     });
   }
@@ -1277,22 +1312,22 @@ public class SendOrderConfirmation {
 }
 ```
 
-> ⚠️ **Watch out for function sprawl.** Hundreds of tiny functions with tangled event dependencies is a **distributed monolith in disguise**. Each function must have a clear, bounded responsibility. The *Hard Parts* authors use the term **granularity integrators** for this: if two functions always change together, they should probably be one service.
+> ⚠️ **Watch out for function sprawl.** Hundreds of tiny functions with tangled event dependencies is a **distributed monolith in disguise**. Each function must have a clear, bounded responsibility. The _Hard Parts_ authors use the term **granularity integrators** for this: if two functions always change together, they should probably be one service.
 
 ### Event Interception
 
 Cartwright, Horn, and Lewis describe [event interception](https://martinfowler.com/articles/patterns-legacy-displacement/event-interception.html) as a key legacy displacement tactic: intercept events (messages, database changes, API calls) flowing through the legacy system, and route some of them to new components. This is particularly useful when the monolith communicates via message queues or database triggers.
 
-### Code Reuse Patterns (from *The Hard Parts*)
+### Code Reuse Patterns (from _The Hard Parts_)
 
-When extracting services you'll encounter shared code — utilities, domain models, DTOs — that multiple services need. The *Hard Parts* authors describe four patterns, each with different coupling tradeoffs:
+When extracting services you'll encounter shared code — utilities, domain models, DTOs — that multiple services need. The _Hard Parts_ authors describe four patterns, each with different coupling tradeoffs:
 
-| Pattern | When to Use | Coupling Tradeoff |
-|---|---|---|
-| **Code replication** | Simple static code (annotations, constants, value objects) | No coupling, but no consistency — copies can drift |
-| **Shared library** | Low- to moderate-change shared concerns; version each library | Compile-time coupling; coordinated releases if not versioned carefully |
-| **Shared service** | Frequently changing shared functionality in polyglot environments | Runtime coupling; the shared service must be available |
-| **Sidecar / service mesh** | Cross-cutting operational concerns (logging, auth, resilience) | Infrastructure coupling; operational overhead |
+| Pattern                    | When to Use                                                       | Coupling Tradeoff                                                      |
+| -------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Code replication**       | Simple static code (annotations, constants, value objects)        | No coupling, but no consistency — copies can drift                     |
+| **Shared library**         | Low- to moderate-change shared concerns; version each library     | Compile-time coupling; coordinated releases if not versioned carefully |
+| **Shared service**         | Frequently changing shared functionality in polyglot environments | Runtime coupling; the shared service must be available                 |
+| **Sidecar / service mesh** | Cross-cutting operational concerns (logging, auth, resilience)    | Infrastructure coupling; operational overhead                          |
 
 **Rule of thumb:** Start with code replication for trivial things, shared libraries (versioned, fine-grained) for domain contracts, and sidecars only for cross-cutting infrastructure.
 
@@ -1312,25 +1347,26 @@ This is a crucial concept for brownfield teams: during migration you will build 
 
 ### Examples of Transitional Architecture
 
-| Element | Purpose | When It Goes Away |
-|---|---|---|
-| **Strangler façade** (API gateway/proxy) | Intercepts requests and routes to new or old | When the monolith is fully decommissioned |
-| **Anti-Corruption Layers** | Translates between monolith and new service models | When the monolith's data is fully migrated |
-| **Legacy Mimics** | New service updates the legacy database so legacy reports/UIs still work | When consumers move to new data sources |
-| **Event routers / bridges** | Route messages between old (e.g., SwiftMQ) and new (e.g., Kafka) messaging systems | When the old messaging system is retired |
-| **Dual-write adapters** | Write to both old and new data stores during migration | When data migration is complete and verified |
+| Element                                  | Purpose                                                                            | When It Goes Away                            |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Strangler façade** (API gateway/proxy) | Intercepts requests and routes to new or old                                       | When the monolith is fully decommissioned    |
+| **Anti-Corruption Layers**               | Translates between monolith and new service models                                 | When the monolith's data is fully migrated   |
+| **Legacy Mimics**                        | New service updates the legacy database so legacy reports/UIs still work           | When consumers move to new data sources      |
+| **Event routers / bridges**              | Route messages between old (e.g., SwiftMQ) and new (e.g., Kafka) messaging systems | When the old messaging system is retired     |
+| **Dual-write adapters**                  | Write to both old and new data stores during migration                             | When data migration is complete and verified |
 
 ### The Cost of Transitional Architecture
 
-> *"A question to consider is: What value does the business place on this risk mitigation?"*
+> _"A question to consider is: What value does the business place on this risk mitigation?"_
 > — Cartwright, Horn, Lewis
 
-Transitional architecture costs real effort to build and maintain. It *looks* like throwaway work, which makes it politically difficult. Be explicit about the tradeoff:
+Transitional architecture costs real effort to build and maintain. It _looks_ like throwaway work, which makes it politically difficult. Be explicit about the tradeoff:
 
 - **Without it:** Big-bang cutover, high risk, long feature freeze
 - **With it:** Incremental migration, lower risk per step, but ongoing maintenance of transition code
 
 Track transitional elements in your architecture documentation. Each should have:
+
 1. **What** it does
 2. **Why** it exists (what risk does it mitigate?)
 3. **When** it can be removed (what's the exit condition?)
@@ -1371,15 +1407,15 @@ mindmap
 
 ### Matching Strategy and Target to Constraints
 
-| Constraint | Recommended Approach | Why |
-|---|---|---|
-| **Low budget** (< 3 infra engineers) | Strangler Fig or Branch by Abstraction → Service-Based Architecture | Shared DB, fewer services to operate, minimal infrastructure overhead |
-| **Small team** (< 10 engineers) | Strangler Fig → Service-Based Architecture | Extract incrementally; keep the number of deployables manageable |
-| **Low DevOps maturity** | Branch by Abstraction → Service-Based Architecture | No proxy infrastructure needed initially; target keeps things simple |
-| **High feature velocity needed** | Strangler Fig with API Gateway → Service-Based or Microservices | Decouple delivery of new features from legacy; ship new service independently |
-| **Internal component swap** (ORM, framework) | Branch by Abstraction with Feature Flags | Swap implementations within the codebase without affecting the deployment topology |
-| **Spiky workloads** | Serverless as deployment target (enabling tactic) | Extract burst-traffic features to auto-scaling functions |
-| **Regulatory / compliance** | API Gateway + ACL | Centralize auth, audit logging, and data transformation at the boundary |
+| Constraint                                   | Recommended Approach                                                | Why                                                                                |
+| -------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Low budget** (< 3 infra engineers)         | Strangler Fig or Branch by Abstraction → Service-Based Architecture | Shared DB, fewer services to operate, minimal infrastructure overhead              |
+| **Small team** (< 10 engineers)              | Strangler Fig → Service-Based Architecture                          | Extract incrementally; keep the number of deployables manageable                   |
+| **Low DevOps maturity**                      | Branch by Abstraction → Service-Based Architecture                  | No proxy infrastructure needed initially; target keeps things simple               |
+| **High feature velocity needed**             | Strangler Fig with API Gateway → Service-Based or Microservices     | Decouple delivery of new features from legacy; ship new service independently      |
+| **Internal component swap** (ORM, framework) | Branch by Abstraction with Feature Flags                            | Swap implementations within the codebase without affecting the deployment topology |
+| **Spiky workloads**                          | Serverless as deployment target (enabling tactic)                   | Extract burst-traffic features to auto-scaling functions                           |
+| **Regulatory / compliance**                  | API Gateway + ACL                                                   | Centralize auth, audit logging, and data transformation at the boundary            |
 
 ### The Cognitive Load Test
 
@@ -1390,23 +1426,23 @@ Ford et al. emphasize that **architectural quantum** isn't just a technical conc
 - Understand the service's domain, API, and failure modes
 - Coordinate deployments with dependent services
 
-**Rule of thumb:** If your team can't draw the architecture from memory, you have too many services. The *Hard Parts* book frames this as balancing **granularity disintegrators** (reasons to split) against **granularity integrators** (reasons to keep together).
+**Rule of thumb:** If your team can't draw the architecture from memory, you have too many services. The _Hard Parts_ book frames this as balancing **granularity disintegrators** (reasons to split) against **granularity integrators** (reasons to keep together).
 
 ```mermaid
 flowchart TD
     Start([Should we split?]) --> GD{Granularity<br/>Disintegrators?}
     GD -->|"Code volatility<br/>Scalability<br/>Fault tolerance<br/>Security needs"| SPLIT[Arguments FOR splitting]
-    
+
     Start --> GI{Granularity<br/>Integrators?}
     GI -->|"ACID transactions<br/>Workflow coupling<br/>Shared code<br/>Data relationships"| KEEP[Arguments AGAINST splitting]
-    
+
     SPLIT --> DECIDE{Do disintegrators<br/>outweigh integrators?}
     KEEP --> DECIDE
-    
+
     DECIDE -->|"Yes"| DO[Split the service]
     DECIDE -->|"No"| DONT[Keep it together]
     DECIDE -->|"Unclear"| WAIT["Wait — don't split<br/>until the cost is clear"]
-    
+
     style WAIT fill:#ffd43b,color:#000
 ```
 
@@ -1416,7 +1452,7 @@ flowchart TD
 
 ## Data Decomposition: The Hardest Part
 
-The title of the book isn't accidental. The hardest part of breaking up a monolith isn't the code — it's the data. Shared databases create **model coupling** across service boundaries. The *Hard Parts* authors describe several data access patterns for teams at different stages:
+The title of the book isn't accidental. The hardest part of breaking up a monolith isn't the code — it's the data. Shared databases create **model coupling** across service boundaries. The _Hard Parts_ authors describe several data access patterns for teams at different stages:
 
 ### Data Decomposition Decision Guide
 
@@ -1425,24 +1461,24 @@ flowchart TD
     Start([Data Access Need]) --> Q1{Does the other service<br/>own this data?}
     Q1 -->|Yes| Q2{How fresh does<br/>the data need to be?}
     Q1 -->|"No — we own it"| LOCAL[Read from local DB ✅]
-    
+
     Q2 -->|"Real-time"| ISC[Inter-Service Call<br/>Ask the owner]
     Q2 -->|"Near real-time"| CDC[Column Schema Replication<br/>via CDC or events]
     Q2 -->|"Eventually consistent"| CACHE[Replicated Cache<br/>or materialized view]
-    
+
     ISC --> WARN1["⚠️ Adds runtime coupling<br/>Owner must be available"]
     CDC --> WARN2["⚠️ Adds eventual consistency<br/>Handle staleness"]
     CACHE --> WARN3["⚠️ Cache invalidation<br/>is hard"]
 ```
 
-### Data Access Patterns (from *The Hard Parts*)
+### Data Access Patterns (from _The Hard Parts_)
 
-| Pattern | How It Works | Tradeoff |
-|---|---|---|
-| **Inter-Service Call** | Service A calls Service B's API for data | Simple but creates runtime coupling — B must be available |
-| **Column Schema Replication** | Keep a local copy of selected columns from another service's data, synced via events or CDC | Good performance, but eventual consistency |
-| **Replicated Cache** | Cache another service's data in memory | Fast reads, but cache invalidation complexity |
-| **Data Domain Pattern** | Shared database with joint ownership between specific services | Good performance, but blurred ownership boundaries |
+| Pattern                       | How It Works                                                                                | Tradeoff                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **Inter-Service Call**        | Service A calls Service B's API for data                                                    | Simple but creates runtime coupling — B must be available |
+| **Column Schema Replication** | Keep a local copy of selected columns from another service's data, synced via events or CDC | Good performance, but eventual consistency                |
+| **Replicated Cache**          | Cache another service's data in memory                                                      | Fast reads, but cache invalidation complexity             |
+| **Data Domain Pattern**       | Shared database with joint ownership between specific services                              | Good performance, but blurred ownership boundaries        |
 
 ### TypeScript — Column Schema Replication via Events
 
@@ -1485,10 +1521,12 @@ export class OrderService {
     }
 
     if (request.total > customer.creditLimit) {
-      throw new Error('Exceeds credit limit');
+      throw new Error("Exceeds credit limit");
     }
 
-    return this.orderRepo.create({ /* ... */ });
+    return this.orderRepo.create({
+      /* ... */
+    });
   }
 }
 ```
@@ -1599,7 +1637,7 @@ Decomposition produces dozens of decisions — "Should we split this service?" "
 
 ### Architectural Fitness Functions
 
-Ford, Richards, Sadalage, and Dehghani define **fitness functions** as automated checks that validate architecture characteristics continuously. They convert architectural *intentions* into measurable *constraints*.
+Ford, Richards, Sadalage, and Dehghani define **fitness functions** as automated checks that validate architecture characteristics continuously. They convert architectural _intentions_ into measurable _constraints_.
 
 ```mermaid
 flowchart LR
@@ -1609,12 +1647,12 @@ flowchart LR
         DEPLOY[Deployment<br/>Independence Checks]
         PERF[Performance<br/>Budget Tests]
     end
-    
+
     CI[CI/CD Pipeline] --> DEP
     CI --> COUP
     CI --> DEPLOY
     CI --> PERF
-    
+
     DEP -->|Fail| BLOCK[Block Merge ❌]
     DEP -->|Pass| OK[Allow Merge ✅]
     COUP -->|Fail| BLOCK
@@ -1623,20 +1661,20 @@ flowchart LR
     DEPLOY -->|Pass| OK
     PERF -->|Fail| BLOCK
     PERF -->|Pass| OK
-    
+
     style BLOCK fill:#ffcccc,color:#000
     style OK fill:#69db7c,color:#000
 ```
 
 **Examples of fitness functions for brownfield migration:**
 
-| Fitness Function | What It Checks | Tool Examples |
-|---|---|---|
-| **No cyclic dependencies between services** | Service A does not depend on B which depends on A | ArchUnit, Dependency-Check, custom CI script |
-| **No cross-service table access** | Service A does not read from Service B's tables | SQL query analysis, schema ownership metadata |
-| **Contract compatibility** | API changes are backward-compatible | OpenAPI diff tools, Pact contract tests |
-| **Max afferent coupling threshold** | No service has > N incoming dependencies | Custom metrics from dependency graphs |
-| **Deployment independence** | Service A can be deployed without redeploying B | CI pipeline topology checks |
+| Fitness Function                            | What It Checks                                    | Tool Examples                                 |
+| ------------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
+| **No cyclic dependencies between services** | Service A does not depend on B which depends on A | ArchUnit, Dependency-Check, custom CI script  |
+| **No cross-service table access**           | Service A does not read from Service B's tables   | SQL query analysis, schema ownership metadata |
+| **Contract compatibility**                  | API changes are backward-compatible               | OpenAPI diff tools, Pact contract tests       |
+| **Max afferent coupling threshold**         | No service has > N incoming dependencies          | Custom metrics from dependency graphs         |
+| **Deployment independence**                 | Service A can be deployed without redeploying B   | CI pipeline topology checks                   |
 
 ```java
 // Example: ArchUnit fitness function (Java)
@@ -1676,20 +1714,24 @@ An ADR is a short document capturing a single architecture decision with its con
 # ADR-007: Use shared database for Order and Inventory services during Phase 1
 
 ## Status
+
 Accepted (transitional — review in Q3)
 
 ## Context
+
 We are extracting Order and Inventory as separate services. Both currently
 read and write the `orders` and `inventory` tables in the monolith database.
 Splitting the data immediately would require distributed transactions or a
 saga, which the team is not yet equipped to implement.
 
 ## Decision
+
 Both services will share the existing monolith database during Phase 1.
 Cross-service table access is accepted but tracked.
 A fitness function flags any NEW cross-service table dependencies.
 
 ## Consequences
+
 - ✅ Unblocks service extraction without data migration risk
 - ❌ Retains schema-level coupling (integration strength = model)
 - ❌ Cannot deploy schema changes independently
@@ -1707,31 +1749,31 @@ flowchart TD
     A["Phase 1:<br/>Identify Boundaries"] --> B{Is the codebase<br/>modular?}
     B -->|"Yes — clear<br/>components"| C[Component-Based<br/>Decomposition]
     B -->|"No — big ball<br/>of mud"| D[Tactical Forking]
-    
+
     C --> E["Phase 2:<br/>Choose Migration Strategy"]
     D --> E
-    
+
     E --> SF{External boundaries?<br/>API routes, services}
     E --> BBA{Internal components?<br/>Libraries, frameworks}
-    
+
     SF --> SFP[Strangler Fig<br/>Proxy/façade intercepts traffic]
     BBA --> BBAP[Branch by Abstraction<br/>Abstraction layer swaps implementations]
-    
+
     SFP --> F["Phase 3:<br/>Target Architecture"]
     BBAP --> F
-    
+
     F -->|"Small team /<br/>Low budget"| G[Service-Based Architecture<br/>4-8 domain services, shared DB]
     F -->|"Large teams /<br/>Independent scaling"| H[Microservices<br/>Fine-grained, own data]
-    
+
     G --> J{Is it working well?}
     H --> J
-    
+
     J -->|"Yes"| K[Stay here ✅<br/>Architecture is a means, not a goal]
     J -->|"Pain points<br/>emerging"| L[Split further with evidence<br/>Repeat the process]
-    
+
     L --> M[Record decisions in ADRs<br/>Track with fitness functions]
     M --> A
-    
+
     style K fill:#69db7c,color:#000
     style L fill:#ffd43b,color:#000
     style SFP fill:#4dabf7,color:#fff
@@ -1750,7 +1792,7 @@ flowchart TD
 
 5. **Use ACLs at every boundary.** The monolith's model will try to leak into your new services. Put a translation layer at the border. See the [ACL patterns in coupling-in-practice.md](coupling-in-practice.md#scenario-3-shared-library-hell).
 
-6. **Accept shared database as a transitional state.** The *Hard Parts* authors note that shared database is an *acceptable, temporary* coupling when the alternative is delayed migration. Track cross-service table access and schedule splits when the pain justifies it.
+6. **Accept shared database as a transitional state.** The _Hard Parts_ authors note that shared database is an _acceptable, temporary_ coupling when the alternative is delayed migration. Track cross-service table access and schedule splits when the pain justifies it.
 
 7. **Name your transitional architecture.** Every adapter, mimic, and dual-write layer you build during migration is [transitional architecture](#transitional-architecture). Document it, budget for it, and plan its removal.
 
@@ -1766,19 +1808,19 @@ flowchart TD
 
 Use this before and after each extraction step.
 
-| # | Question | Healthy Answer |
-|---|---|---|
-| 1 | Can we deploy this service independently without coordinating with other teams? | Yes |
-| 2 | Does this service own its data, or are we reading from another service's tables? | Owns its data (or has an explicit plan to migrate) |
-| 3 | Is the integration with the monolith behind an ACL/contract? | Yes — no monolith types in our domain model |
-| 4 | Can we describe this service's responsibility in one sentence? | Yes |
-| 5 | Does extracting this service reduce our deployment risk, or just add operational overhead? | Reduces risk |
-| 6 | Are we splitting because of evidence (metrics, pain) or because of fashion? | Evidence |
-| 7 | Does our team have the capacity to operate this as an independent service (CI/CD, monitoring, on-call)? | Yes, or we have a plan to build that capacity |
-| 8 | Have we accounted for [data decomposition](#data-decomposition-the-hardest-part) tradeoffs? | Yes — chosen pattern documented with known tradeoffs |
-| 9 | Have we identified and documented all [transitional architecture](#transitional-architecture) elements created by this extraction? | Yes — each has a documented exit condition |
-| 10 | Do we have [fitness functions](#fitness-functions-and-architecture-decision-records) in CI that guard the architectural constraints of this extraction? | Yes — dependency direction, coupling thresholds, contract compatibility |
-| 11 | Have we recorded the key decisions and tradeoffs in [ADRs](#architecture-decision-records-adrs)? | Yes |
+| #   | Question                                                                                                                                                | Healthy Answer                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 1   | Can we deploy this service independently without coordinating with other teams?                                                                         | Yes                                                                     |
+| 2   | Does this service own its data, or are we reading from another service's tables?                                                                        | Owns its data (or has an explicit plan to migrate)                      |
+| 3   | Is the integration with the monolith behind an ACL/contract?                                                                                            | Yes — no monolith types in our domain model                             |
+| 4   | Can we describe this service's responsibility in one sentence?                                                                                          | Yes                                                                     |
+| 5   | Does extracting this service reduce our deployment risk, or just add operational overhead?                                                              | Reduces risk                                                            |
+| 6   | Are we splitting because of evidence (metrics, pain) or because of fashion?                                                                             | Evidence                                                                |
+| 7   | Does our team have the capacity to operate this as an independent service (CI/CD, monitoring, on-call)?                                                 | Yes, or we have a plan to build that capacity                           |
+| 8   | Have we accounted for [data decomposition](#data-decomposition-the-hardest-part) tradeoffs?                                                             | Yes — chosen pattern documented with known tradeoffs                    |
+| 9   | Have we identified and documented all [transitional architecture](#transitional-architecture) elements created by this extraction?                      | Yes — each has a documented exit condition                              |
+| 10  | Do we have [fitness functions](#fitness-functions-and-architecture-decision-records) in CI that guard the architectural constraints of this extraction? | Yes — dependency direction, coupling thresholds, contract compatibility |
+| 11  | Have we recorded the key decisions and tradeoffs in [ADRs](#architecture-decision-records-adrs)?                                                        | Yes                                                                     |
 
 ---
 
@@ -1786,20 +1828,20 @@ Use this before and after each extraction step.
 
 These resources informed this guide. For the full reference list, see [coupling-references.md](coupling-references.md).
 
-| Resource | Author | Focus |
-|---|---|---|
-| [**Software Architecture: The Hard Parts**](https://www.amazon.com/dp/1492086894) | Ford, Richards, Sadalage, Dehghani | Decomposition patterns, granularity, data architecture, distributed transactions, fitness functions |
-| [**Building Microservices** (2nd ed.)](https://www.amazon.com/dp/1492034029) | Sam Newman | Strangler fig, service decomposition, integration patterns |
-| [**Monolith to Microservices**](https://www.amazon.com/dp/1492047848) | Sam Newman | Practical migration patterns for brownfield teams |
-| [**Balancing Coupling in Software Design**](https://amzn.to/4irApMt) | Vlad Khononov | The three-dimensional coupling model that underpins our coupling analysis |
-| [**Patterns of Legacy Displacement**](https://martinfowler.com/articles/patterns-legacy-displacement/) | Cartwright, Horn, Lewis | Transitional architecture, event interception, legacy mimic, seams |
-| [**Strangler Fig Application**](https://martinfowler.com/bliki/StranglerFigApplication.html) | Martin Fowler | The original description of the strangler fig pattern |
-| [Strangler Fig pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-decomposing-monoliths/strangler-fig.html) | AWS Docs | AWS Prescriptive Guidance using well-architected principles |
-| [**Branch by Abstraction**](https://martinfowler.com/bliki/BranchByAbstraction.html) | Martin Fowler | The technique for making large-scale changes incrementally within a codebase |
-| [Branch by Abstraction and Application Strangulation](https://learning-notes.mistermicheels.com/processes-techniques/branch-by-abstraction-application-strangulation/) | mistermicheels | Clear comparison of the two strategies with real-world examples |
-| [Branch by Abstraction pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-decomposing-monoliths/branch-by-abstraction.html) | AWS Docs | AWS Prescriptive Guidance using well-architected principles |
-| [Service-Based Architecture (Lesson 163)](https://developertoarchitect.com/lessons/lesson163.html) | Mark Richards | Why service-based architecture is an underappreciated style |
-| [What I Learned from Software Architecture: The Hard Parts](https://newsletter.techworld-with-milan.com/p/what-i-learned-from-the-software) | Dr. Milan Milanović | Concise book review with key takeaways |
+| Resource                                                                                                                                                               | Author                             | Focus                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [**Software Architecture: The Hard Parts**](https://www.amazon.com/dp/1492086894)                                                                                      | Ford, Richards, Sadalage, Dehghani | Decomposition patterns, granularity, data architecture, distributed transactions, fitness functions |
+| [**Building Microservices** (2nd ed.)](https://www.amazon.com/dp/1492034029)                                                                                           | Sam Newman                         | Strangler fig, service decomposition, integration patterns                                          |
+| [**Monolith to Microservices**](https://www.amazon.com/dp/1492047848)                                                                                                  | Sam Newman                         | Practical migration patterns for brownfield teams                                                   |
+| [**Balancing Coupling in Software Design**](https://amzn.to/4irApMt)                                                                                                   | Vlad Khononov                      | The three-dimensional coupling model that underpins our coupling analysis                           |
+| [**Patterns of Legacy Displacement**](https://martinfowler.com/articles/patterns-legacy-displacement/)                                                                 | Cartwright, Horn, Lewis            | Transitional architecture, event interception, legacy mimic, seams                                  |
+| [**Strangler Fig Application**](https://martinfowler.com/bliki/StranglerFigApplication.html)                                                                           | Martin Fowler                      | The original description of the strangler fig pattern                                               |
+| [Strangler Fig pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-decomposing-monoliths/strangler-fig.html)                               | AWS Docs                           | AWS Prescriptive Guidance using well-architected principles                                         |
+| [**Branch by Abstraction**](https://martinfowler.com/bliki/BranchByAbstraction.html)                                                                                   | Martin Fowler                      | The technique for making large-scale changes incrementally within a codebase                        |
+| [Branch by Abstraction and Application Strangulation](https://learning-notes.mistermicheels.com/processes-techniques/branch-by-abstraction-application-strangulation/) | mistermicheels                     | Clear comparison of the two strategies with real-world examples                                     |
+| [Branch by Abstraction pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/modernization-decomposing-monoliths/branch-by-abstraction.html)               | AWS Docs                           | AWS Prescriptive Guidance using well-architected principles                                         |
+| [Service-Based Architecture (Lesson 163)](https://developertoarchitect.com/lessons/lesson163.html)                                                                     | Mark Richards                      | Why service-based architecture is an underappreciated style                                         |
+| [What I Learned from Software Architecture: The Hard Parts](https://newsletter.techworld-with-milan.com/p/what-i-learned-from-the-software)                            | Dr. Milan Milanović                | Concise book review with key takeaways                                                              |
 
 ---
 

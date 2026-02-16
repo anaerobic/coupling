@@ -2,8 +2,8 @@
 
 [← Back to Main Guide](README.md)
 
-> *"These dimensions don't act in isolation — instead, their interplay determines*
-> *whether a design leads to modularity or complexity."*
+> _"These dimensions don't act in isolation — instead, their interplay determines_
+> _whether a design leads to modularity or complexity."_
 > — Vlad Khononov
 
 The three dimensions of coupling are **Integration Strength**, **Distance**, and **Volatility**. Each is a separate force, and you need to consider all three together when making design decisions.
@@ -22,7 +22,7 @@ flowchart LR
 
 ## 1. Integration Strength
 
-**Integration Strength** categorizes *how much knowledge* is shared between coupled components. More shared knowledge = higher risk that a change in one component cascading into changes in the other.
+**Integration Strength** categorizes _how much knowledge_ is shared between coupled components. More shared knowledge = higher risk that a change in one component cascading into changes in the other.
 
 ### The Four Levels
 
@@ -32,7 +32,7 @@ flowchart TB
     F["🟠 FUNCTIONAL<br/>Sharing business logic<br/>(duplicated rules, shared algorithms)"]
     M["🟢 MODEL<br/>Sharing domain models<br/>(entities, value objects)"]
     C["🔵 CONTRACT<br/>Sharing only a contract<br/>(DTOs, API schemas, events)"]
-    
+
     I -->|"Reduce knowledge"| F
     F -->|"Reduce knowledge"| M
     M -->|"Reduce knowledge"| C
@@ -48,7 +48,7 @@ flowchart TB
 > 🏠 **Imagine you share a house with roommates.**
 >
 > - **Intrusive coupling**: You go through your roommate's drawers to find a fork. If they rearrange their stuff, you can't find anything. Worst case.
-> - **Functional coupling**: You both cook dinner at the same time using the same recipe. If the recipe changes, both of you need to know. 
+> - **Functional coupling**: You both cook dinner at the same time using the same recipe. If the recipe changes, both of you need to know.
 > - **Model coupling**: You share a grocery list. When the list format changes, both of you need to adapt.
 > - **Contract coupling**: You leave a note on the fridge that says "need milk." Your roommate gets milk. Neither of you needs to know how the other shops. Best case.
 
@@ -56,13 +56,13 @@ flowchart TB
 
 ### Level 1: Intrusive Coupling (🔴 Highest Risk)
 
-One component reaches into another's *implementation details* — private objects, internal databases, undocumented APIs.
+One component reaches into another's _implementation details_ — private objects, internal databases, undocumented APIs.
 
 #### TypeScript — Bad: Reading another service's database directly
 
 ```typescript
 // ❌ OrderService directly queries UserService's database table
-import { Pool } from 'pg';
+import { Pool } from "pg";
 
 class OrderService {
   private userDb: Pool; // Directly connected to User service's DB!
@@ -70,20 +70,20 @@ class OrderService {
   async createOrder(userId: string, items: OrderItem[]) {
     // Reaching into User service's internal schema
     const result = await this.userDb.query(
-      'SELECT credit_limit, is_verified FROM users WHERE id = $1',
-      [userId]
+      "SELECT credit_limit, is_verified FROM users WHERE id = $1",
+      [userId],
     );
-    
+
     const user = result.rows[0];
     if (!user.is_verified || user.credit_limit < this.calculateTotal(items)) {
-      throw new Error('Cannot create order');
+      throw new Error("Cannot create order");
     }
     // ... create the order
   }
 }
 ```
 
-**Why is this terrible?** If the User team renames `credit_limit` to `spending_limit` or restructures their database, the Order service silently breaks. The User team may not even *know* the Order service depends on their schema.
+**Why is this terrible?** If the User team renames `credit_limit` to `spending_limit` or restructures their database, the Order service silently breaks. The User team may not even _know_ the Order service depends on their schema.
 
 #### C# — Bad: Accessing internal implementation
 
@@ -96,9 +96,9 @@ public class ReportGenerator
         // Using reflection to access private field — intrusive coupling!
         var field = typeof(UserService)
             .GetField("_userCache", BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         var cache = (Dictionary<string, User>)field!.GetValue(userService)!;
-        
+
         return new Report
         {
             TotalUsers = cache.Count,
@@ -113,7 +113,7 @@ public class ReportGenerator
 ```java
 // ❌ Reaching into Hibernate's internal session to bypass the repository
 public class AuditService {
-    
+
     @PersistenceContext
     private EntityManager em;
 
@@ -121,7 +121,7 @@ public class AuditService {
         // Coupling to Hibernate's internal implementation
         Session session = em.unwrap(Session.class);
         SessionImplementor impl = (SessionImplementor) session;
-        
+
         // Reading from internal dirty-tracking mechanism
         PersistenceContext pc = impl.getPersistenceContext();
         // ... extract changes from internal state
@@ -133,7 +133,7 @@ public class AuditService {
 
 ### Level 2: Functional Coupling (🟠 High Risk)
 
-Multiple components share knowledge of *business rules*. If a rule changes, all components implementing it must change simultaneously.
+Multiple components share knowledge of _business rules_. If a rule changes, all components implementing it must change simultaneously.
 
 #### TypeScript — Bad: Duplicated business rule
 
@@ -143,17 +143,20 @@ Multiple components share knowledge of *business rules*. If a rule changes, all 
 // Frontend — calculates preview for the user
 function calculateDiscount(cart: CartItem[]): number {
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  if (total > 100) return total * 0.10;  // 10% over $100
-  if (total > 50) return total * 0.05;   // 5% over $50
+  if (total > 100) return total * 0.1; // 10% over $100
+  if (total > 50) return total * 0.05; // 5% over $50
   return 0;
 }
 
 // Backend — calculates the actual charge
 class PricingService {
   calculateDiscount(order: Order): number {
-    const total = order.lineItems.reduce((s, li) => s + li.unitPrice * li.qty, 0);
-    if (total > 100) return total * 0.10;  // 10% over $100
-    if (total > 50) return total * 0.05;   // 5% over $50
+    const total = order.lineItems.reduce(
+      (s, li) => s + li.unitPrice * li.qty,
+      0,
+    );
+    if (total > 100) return total * 0.1; // 10% over $100
+    if (total > 50) return total * 0.05; // 5% over $50
     return 0;
   }
 }
@@ -177,7 +180,7 @@ public static class DiscountPolicy
 // Both frontend BFF and backend use the same policy
 public class PricingService
 {
-    public decimal GetDiscount(Order order) 
+    public decimal GetDiscount(Order order)
         => DiscountPolicy.Calculate(order.Total);
 }
 
@@ -193,7 +196,7 @@ public class CartPreviewController : ControllerBase
 
 ### Level 3: Model Coupling (🟢 Moderate Risk)
 
-Components share a *domain model*. If the model changes (e.g., new fields, restructured entities), all consumers must adapt.
+Components share a _domain model_. If the model changes (e.g., new fields, restructured entities), all consumers must adapt.
 
 #### Java — Shared domain model
 
@@ -259,7 +262,7 @@ function toShipmentRequest(order: Order): ShipmentRequest {
 
 ### Level 4: Contract Coupling (🔵 Lowest Risk)
 
-Components only share a *contract* — a DTO, API schema, event definition, or interface. The contract encapsulates all internal details.
+Components only share a _contract_ — a DTO, API schema, event definition, or interface. The contract encapsulates all internal details.
 
 #### C# — Contract-based integration
 
@@ -283,7 +286,7 @@ public class OrderService
     {
         var order = Order.Create(cmd);  // internal domain model
         await _repository.Save(order);
-        
+
         // Publish contract — not the internal model
         await _eventBus.Publish(new OrderPlacedEvent(
             order.Id, order.CustomerId, order.Total, DateTime.UtcNow
@@ -326,7 +329,7 @@ public class StripePaymentGateway implements PaymentGateway {
             .setCurrency(request.currency())
             .setSource(request.tokenId())
             .build();
-        
+
         Charge charge = stripeClient.charges().create(params);
         return new PaymentResult(charge.getId(), charge.getStatus());
     }
@@ -342,7 +345,7 @@ public class StripePaymentGateway implements PaymentGateway {
 ```mermaid
 flowchart LR
     M["Methods<br/>within a class"] --> O["Objects<br/>within a package"] --> N["Packages /<br/>Namespaces"] --> S["Microservices"] --> Sys["External<br/>Systems"]
-    
+
     subgraph cost [" "]
         direction LR
         Low["💰 Low cost of change"]
@@ -361,7 +364,7 @@ flowchart LR
 > - **Different service** = calling someone in another building (phone tag, meetings, email chains)
 > - **Different system** = calling a company in another country (time zones, language barriers, contracts)
 >
-> The further away your collaborator is, the *more expensive* it is to coordinate changes.
+> The further away your collaborator is, the _more expensive_ it is to coordinate changes.
 
 ### Distance Affects Two Things
 
@@ -369,13 +372,13 @@ flowchart LR
 
 When two coupled components must change together, how hard is it?
 
-| Distance | Example | Change Cost |
-|---|---|---|
-| Same method | Two lines of code | Trivial — one edit |
-| Same class | Two methods | Easy — same file |
-| Same package | Two classes | Low — same PR |
-| Different service | Two deployments | Medium — coordinated releases |
-| Different system | Two companies | High — contract negotiation |
+| Distance          | Example           | Change Cost                   |
+| ----------------- | ----------------- | ----------------------------- |
+| Same method       | Two lines of code | Trivial — one edit            |
+| Same class        | Two methods       | Easy — same file              |
+| Same package      | Two classes       | Low — same PR                 |
+| Different service | Two deployments   | Medium — coordinated releases |
+| Different system  | Two companies     | High — contract negotiation   |
 
 #### Lifecycle Coupling (goes DOWN with distance)
 
@@ -389,12 +392,12 @@ flowchart LR
     subgraph micro ["Microservices (High Distance)"]
         A2[Service A] ~~~ B2[Service B] ~~~ C2[Service C]
     end
-    
+
     mono -->|"One deployment<br/>High lifecycle coupling"| Deploy1[🚀 Deploy all]
     micro -->|"Independent deployments<br/>Low lifecycle coupling"| Deploy2[🚀 Deploy each]
 ```
 
-> ⚠️ **This is why many "monolith to microservices" migrations start!** Teams want to reduce lifecycle coupling — they want to deploy independently. But if integration strength is high, they end up with a *distributed monolith* — the worst of both worlds.
+> ⚠️ **This is why many "monolith to microservices" migrations start!** Teams want to reduce lifecycle coupling — they want to deploy independently. But if integration strength is high, they end up with a _distributed monolith_ — the worst of both worlds.
 
 ### Socio-Technical Distance
 
@@ -408,7 +411,7 @@ flowchart TD
     subgraph diff ["Different Teams"]
         D1[Service C] <-->|"Meetings, Jira tickets,<br/>API review, contract negotiation"| D2[Service D]
     end
-    
+
     same -->|Low socio-technical distance| E1[🟢 Easy to coordinate]
     diff -->|High socio-technical distance| E2[🔴 Expensive to coordinate]
 ```
@@ -424,15 +427,15 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  tier: 'free' | 'pro' | 'enterprise';
+  tier: "free" | "pro" | "enterprise";
 }
 
 // services/billing/src/billing.service.ts
-import { UserProfile } from '@myorg/shared-types';  // same monorepo = low distance
+import { UserProfile } from "@myorg/shared-types"; // same monorepo = low distance
 
 export class BillingService {
   calculatePrice(user: UserProfile, plan: Plan): number {
-    return plan.basePrice * (user.tier === 'enterprise' ? 0.8 : 1.0);
+    return plan.basePrice * (user.tier === "enterprise" ? 0.8 : 1.0);
   }
 }
 ```
@@ -455,7 +458,7 @@ using Acme.Orders.Contracts;
 public class DashboardService
 {
     private readonly HttpClient _httpClient;
-    
+
     public async Task<OrderSummary> GetOrder(string orderId)
     {
         return await _httpClient.GetFromJsonAsync<OrderSummary>(
@@ -487,21 +490,21 @@ flowchart TD
     BD[Business Domain] --> Core
     BD --> Supporting
     BD --> Generic
-    
+
     Core["🔴 Core Subdomain<br/>Competitive advantage<br/>Constantly evolving<br/>HIGH volatility"]
     Supporting["🟡 Supporting Subdomain<br/>Necessary but not differentiating<br/>Changes occasionally<br/>MEDIUM volatility"]
     Generic["🟢 Generic Subdomain<br/>Solved problems<br/>Off-the-shelf solutions<br/>LOW volatility"]
-    
+
     style Core fill:#ff6b6b,color:#fff
     style Supporting fill:#ffd43b,color:#333
     style Generic fill:#69db7c,color:#333
 ```
 
-| Subdomain | Example | Volatility | Coupling Strategy |
-|---|---|---|---|
-| **Core** | Real-time pricing algorithm | 🔴 High | Minimize integration strength, isolate behind contracts |
-| **Supporting** | User registration flow | 🟡 Medium | Model coupling OK if within same service |
-| **Generic** | Email sending, logging | 🟢 Low | Even tight coupling is acceptable |
+| Subdomain      | Example                     | Volatility | Coupling Strategy                                       |
+| -------------- | --------------------------- | ---------- | ------------------------------------------------------- |
+| **Core**       | Real-time pricing algorithm | 🔴 High    | Minimize integration strength, isolate behind contracts |
+| **Supporting** | User registration flow      | 🟡 Medium  | Model coupling OK if within same service                |
+| **Generic**    | Email sending, logging      | 🟢 Low     | Even tight coupling is acceptable                       |
 
 ### TypeScript — Volatility-aware architecture
 
@@ -519,7 +522,10 @@ interface PricingContract {
 class InventoryService {
   constructor(private repo: InventoryRepository) {}
 
-  async reserveStock(orderId: string, items: StockReservation[]): Promise<void> {
+  async reserveStock(
+    orderId: string,
+    items: StockReservation[],
+  ): Promise<void> {
     // Uses shared domain model — acceptable at medium volatility
     for (const item of items) {
       const stock = await this.repo.findByProductId(item.productId);
@@ -531,14 +537,14 @@ class InventoryService {
 
 // 🟢 GENERIC: Email Sending — hasn't changed in years
 // Even model coupling to the email library is fine
-import { SES } from '@aws-sdk/client-ses';
+import { SES } from "@aws-sdk/client-ses";
 
 class EmailService {
   constructor(private ses: SES) {}
 
   async send(to: string, subject: string, body: string): Promise<void> {
     await this.ses.sendEmail({
-      Source: 'noreply@shop.com',
+      Source: "noreply@shop.com",
       Destination: { ToAddresses: [to] },
       Message: {
         Subject: { Data: subject },
@@ -551,20 +557,20 @@ class EmailService {
 
 ### Essential vs. Accidental Volatility
 
-> ⚠️ **Warning:** Don't confuse *commit frequency* with *volatility*.
+> ⚠️ **Warning:** Don't confuse _commit frequency_ with _volatility_.
 >
-> A component might change often because it's **poorly designed** (accidental volatility), not because the business domain is evolving (essential volatility). Conversely, a component might *appear* stable, but that's only because the team is afraid to touch it.
+> A component might change often because it's **poorly designed** (accidental volatility), not because the business domain is evolving (essential volatility). Conversely, a component might _appear_ stable, but that's only because the team is afraid to touch it.
 
 ```mermaid
 flowchart LR
     subgraph essential ["Essential Volatility"]
         E1["Business requirements change<br/>New regulations<br/>Market competition"]
     end
-    
+
     subgraph accidental ["Accidental Volatility"]
         A1["Poor design<br/>Missing abstractions<br/>Tight coupling causes ripple effects"]
     end
-    
+
     essential -->|"Unavoidable"| Strat["Strategy: Reduce integration<br/>strength and distance"]
     accidental -->|"Fixable"| Fix["Strategy: Refactor the design<br/>to reduce cascading changes"]
 ```
@@ -577,7 +583,7 @@ flowchart LR
 // ❌ BAD: Directly coupling to the volatile implementation
 public class OrderService {
     private final PricingEngine pricingEngine; // concrete, volatile class
-    
+
     public Order createOrder(CreateOrderRequest req) {
         // If PricingEngine's API changes (which it does weekly), this breaks
         BigDecimal price = pricingEngine.calculateDynamicPrice(
@@ -595,14 +601,14 @@ public interface PricingPort {
 
 public class PricingAdapter implements PricingPort {
     private final PricingEngine engine; // volatile implementation hidden here
-    
+
     @Override
     public Price calculate(String productId, int quantity, String customerId) {
         // Translate between our stable contract and the volatile engine
         var segment = customerService.getSegment(customerId);
         var abGroup = abTestService.getGroup(customerId);
         var geo = geoService.locate(customerId);
-        
+
         return Price.of(engine.calculateDynamicPrice(
             productId, quantity, segment, abGroup, geo
         ));
@@ -612,7 +618,7 @@ public class PricingAdapter implements PricingPort {
 // OrderService depends on the STABLE port, not the VOLATILE engine
 public class OrderService {
     private final PricingPort pricing; // stable interface
-    
+
     public Order createOrder(CreateOrderRequest req) {
         Price price = pricing.calculate(req.productId(), req.quantity(), req.customerId());
         return new Order(req, price);
@@ -631,15 +637,15 @@ flowchart TD
     IS["Integration Strength<br/>(How much knowledge?)"]
     D["Distance<br/>(How far apart?)"]
     V["Volatility<br/>(How likely to change?)"]
-    
+
     IS -->|"High strength + High distance"| TC["❌ Tight Coupling<br/>(Distributed Monolith)"]
     IS -->|"Low strength + High distance"| LC["✅ Loose Coupling"]
     IS -->|"High strength + Low distance"| HC["✅ High Cohesion"]
     IS -->|"Low strength + Low distance"| LoCo["❌ Low Cohesion"]
-    
+
     V -->|"High volatility<br/>amplifies problems"| TC
     V -->|"Low volatility<br/>reduces impact"| OK["Acceptable even<br/>if not perfect"]
-    
+
     style TC fill:#ff6b6b,color:#fff
     style LoCo fill:#ffcccc
     style LC fill:#69db7c,color:#333

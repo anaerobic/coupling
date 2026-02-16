@@ -2,8 +2,8 @@
 
 [← Back to Main Guide](README.md) | [← Metrics & Refactoring](coupling-metrics-and-refactoring.md)
 
-> This guide applies coupling concepts to real TypeScript, C#, and Java codebases 
-> and distributed architectures. Each scenario shows a **before** (problematic) and 
+> This guide applies coupling concepts to real TypeScript, C#, and Java codebases
+> and distributed architectures. Each scenario shows a **before** (problematic) and
 > **after** (improved) design with coupling analysis.
 
 ---
@@ -29,7 +29,7 @@ flowchart TD
         IS[Inventory Service]
         SS[Shipping Service]
     end
-    
+
     OS -->|"Sync HTTP"| PS
     OS -->|"Sync HTTP"| CS
     OS -->|"Sync HTTP"| IS
@@ -38,13 +38,13 @@ flowchart TD
     SS -->|"Sync HTTP"| OS
     SS -->|"Sync HTTP"| IS
     IS -->|"Sync HTTP"| CS
-    
+
     OS -->|"Read/Write"| DB[(Shared Database)]
     PS -->|"Read/Write"| DB
     CS -->|"Read/Write"| DB
     IS -->|"Read/Write"| DB
     SS -->|"Read/Write"| DB
-    
+
     style DB fill:#ff6b6b,color:#fff
     style OS fill:#ffa8a8,color:#000
     style PS fill:#ffa8a8,color:#000
@@ -57,14 +57,14 @@ Notice the web of synchronous calls between services — every service knows abo
 
 **What makes this a distributed monolith (not just "shared database"):**
 
-| Symptom | How it manifests |
-|---|---|
-| **Tangled service-to-service calls** | Services call each other directly and synchronously in both directions, forming circular dependency chains |
-| **Shared database** | All five services read from and write to the same tables — no data ownership boundaries |
-| **Scattered business logic** | Order validation logic lives partly in Order Service, partly in Payment Service, and partly in Inventory Service |
-| **Coordinated deployments** | A schema change or API change in Customer Service forces redeployment of all five services |
-| **Shared domain knowledge** | Every service knows the internal structure of Customer, Order, and Payment models |
-| **Distributed transactions** | Business operations span multiple services synchronously — if any one fails, manual rollback logic is scattered everywhere |
+| Symptom                              | How it manifests                                                                                                           |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| **Tangled service-to-service calls** | Services call each other directly and synchronously in both directions, forming circular dependency chains                 |
+| **Shared database**                  | All five services read from and write to the same tables — no data ownership boundaries                                    |
+| **Scattered business logic**         | Order validation logic lives partly in Order Service, partly in Payment Service, and partly in Inventory Service           |
+| **Coordinated deployments**          | A schema change or API change in Customer Service forces redeployment of all five services                                 |
+| **Shared domain knowledge**          | Every service knows the internal structure of Customer, Order, and Payment models                                          |
+| **Distributed transactions**         | Business operations span multiple services synchronously — if any one fails, manual rollback logic is scattered everywhere |
 
 **Coupling Analysis:**
 | Dimension | Value | Why |
@@ -78,7 +78,7 @@ Notice the web of synchronous calls between services — every service knows abo
 
 ```typescript
 // ❌ order-service/src/order.service.ts
-import { Pool } from 'pg';
+import { Pool } from "pg";
 
 export class OrderService {
   constructor(private db: Pool) {} // same database connection as every other service
@@ -88,28 +88,28 @@ export class OrderService {
     const customer = await this.db.query(
       `SELECT id, name, credit_limit, loyalty_tier, email
        FROM customers WHERE id = $1`,
-      [req.customerId]
+      [req.customerId],
     );
 
     // ❌ Directly reads from INVENTORY service's tables
     const stock = await this.db.query(
       `SELECT available_qty, warehouse_id FROM inventory WHERE product_id = $1`,
-      [req.productId]
+      [req.productId],
     );
 
     // ❌ Business logic that belongs in Inventory Service
     if (stock.rows[0].available_qty < req.quantity) {
-      throw new Error('Out of stock');
+      throw new Error("Out of stock");
     }
 
     // ❌ Business logic that belongs in Customer/Payment Service
     if (customer.rows[0].credit_limit < req.total) {
-      throw new Error('Credit limit exceeded');
+      throw new Error("Credit limit exceeded");
     }
 
     // ❌ Synchronous call to Payment Service — if it's down, orders break
-    const paymentResult = await fetch('http://payment-service:3002/charge', {
-      method: 'POST',
+    const paymentResult = await fetch("http://payment-service:3002/charge", {
+      method: "POST",
       body: JSON.stringify({
         customerId: req.customerId,
         amount: req.total,
@@ -117,24 +117,24 @@ export class OrderService {
         paymentMethod: customer.rows[0].payment_method_id,
       }),
     });
-    if (!paymentResult.ok) throw new Error('Payment failed');
+    if (!paymentResult.ok) throw new Error("Payment failed");
 
     // ❌ Writes directly to shared tables
     const result = await this.db.query(
       `INSERT INTO orders (customer_id, product_id, qty, total, status)
        VALUES ($1, $2, $3, $4, 'pending') RETURNING *`,
-      [req.customerId, req.productId, req.quantity, req.total]
+      [req.customerId, req.productId, req.quantity, req.total],
     );
 
     // ❌ Directly updates INVENTORY tables — not our data!
     await this.db.query(
       `UPDATE inventory SET available_qty = available_qty - $1 WHERE product_id = $2`,
-      [req.quantity, req.productId]
+      [req.quantity, req.productId],
     );
 
     // ❌ Synchronous call to Shipping — if it's down, the order is half-created
-    await fetch('http://shipping-service:3004/shipments', {
-      method: 'POST',
+    await fetch("http://shipping-service:3004/shipments", {
+      method: "POST",
       body: JSON.stringify({
         orderId: result.rows[0].id,
         warehouseId: stock.rows[0].warehouse_id,
@@ -155,20 +155,20 @@ export class PaymentService {
     // ❌ Reads customer data directly — duplicates customer service's logic
     const customer = await this.db.query(
       `SELECT credit_limit, loyalty_tier FROM customers WHERE id = $1`,
-      [req.customerId]
+      [req.customerId],
     );
 
     // ❌ Discount logic that belongs in Order Service
-    const discount = customer.rows[0].loyalty_tier === 'gold' ? 0.1 : 0;
+    const discount = customer.rows[0].loyalty_tier === "gold" ? 0.1 : 0;
     const finalAmount = req.amount * (1 - discount);
 
     // ❌ Synchronous callback to Order Service to update status
-    await fetch('http://order-service:3001/orders/' + req.orderId + '/status', {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'payment_confirmed' }),
+    await fetch("http://order-service:3001/orders/" + req.orderId + "/status", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "payment_confirmed" }),
     });
 
-    return { transactionId: 'txn_123', amount: finalAmount };
+    return { transactionId: "txn_123", amount: finalAmount };
   }
 }
 ```
@@ -182,38 +182,38 @@ flowchart TD
         ODB[(Order DB)]
         OS --> ODB
     end
-    
+
     subgraph Payment ["Payment Service"]
         PS[Payment Logic]
         PDB[(Payment DB)]
         PS --> PDB
     end
-    
+
     subgraph Customer ["Customer Service"]
         CSvc[Customer Logic]
         CDB[(Customer DB)]
         CSvc --> CDB
     end
-    
+
     subgraph Inventory ["Inventory Service"]
         ISvc[Inventory Logic]
         IDB[(Inventory DB)]
         ISvc --> IDB
     end
-    
+
     subgraph Shipping ["Shipping Service"]
         SS[Shipping Logic]
         SDB[(Shipping DB)]
         SS --> SDB
     end
-    
+
     OS -->|"OrderPlaced event"| EB{{Event Bus}}
     EB -->|"OrderPlaced"| PS
     EB -->|"PaymentConfirmed"| ISvc
     EB -->|"InventoryReserved"| SS
     PS -->|"PaymentConfirmed event"| EB
     ISvc -->|"InventoryReserved event"| EB
-    
+
     OS -.->|"HTTP: Check credit"| PS
     OS -.->|"HTTP: Get customer"| CSvc
 ```
@@ -231,7 +231,7 @@ flowchart TD
 ```typescript
 // shared-contracts/src/events.ts — the ONLY shared package
 export interface OrderPlacedEvent {
-  type: 'OrderPlaced';
+  type: "OrderPlaced";
   orderId: string;
   customerId: string;
   totalAmount: number;
@@ -239,41 +239,44 @@ export interface OrderPlacedEvent {
 }
 
 export interface PaymentConfirmedEvent {
-  type: 'PaymentConfirmed';
+  type: "PaymentConfirmed";
   orderId: string;
   transactionId: string;
   confirmedAt: string;
 }
 
 export interface InventoryReservedEvent {
-  type: 'InventoryReserved';
+  type: "InventoryReserved";
   orderId: string;
   warehouseId: string;
   reservedAt: string;
 }
 
 // order-service/src/order.service.ts
-import { OrderPlacedEvent } from '@myorg/shared-contracts';
+import { OrderPlacedEvent } from "@myorg/shared-contracts";
 
 export class OrderService {
   constructor(
-    private orderRepo: OrderRepository,    // own database — only order tables
-    private eventBus: EventBus,            // publish events
+    private orderRepo: OrderRepository, // own database — only order tables
+    private eventBus: EventBus, // publish events
     private customerClient: CustomerClient, // contract-based API call
-    private paymentClient: PaymentClient   // contract-based API call
+    private paymentClient: PaymentClient, // contract-based API call
   ) {}
 
   async createOrder(req: CreateOrderRequest): Promise<Order> {
     // ✅ Ask the customer service through its API (contract coupling)
     const customer = await this.customerClient.getCustomer(req.customerId);
-    if (customer.status !== 'active') {
-      throw new Error('Customer is not active');
+    if (customer.status !== "active") {
+      throw new Error("Customer is not active");
     }
 
     // ✅ Ask the payment service through its API (contract coupling)
-    const creditCheck = await this.paymentClient.checkCredit(req.customerId, req.total);
+    const creditCheck = await this.paymentClient.checkCredit(
+      req.customerId,
+      req.total,
+    );
     if (!creditCheck.approved) {
-      throw new Error('Credit check failed');
+      throw new Error("Credit check failed");
     }
 
     // ✅ Only writes to OUR tables
@@ -282,12 +285,12 @@ export class OrderService {
       productId: req.productId,
       quantity: req.quantity,
       total: req.total,
-      status: 'pending',
+      status: "pending",
     });
 
     // ✅ Publish event — payment, inventory, shipping subscribe independently
     await this.eventBus.publish<OrderPlacedEvent>({
-      type: 'OrderPlaced',
+      type: "OrderPlaced",
       orderId: order.id,
       customerId: order.customerId,
       totalAmount: order.total,
@@ -299,24 +302,27 @@ export class OrderService {
 }
 
 // payment-service/src/handlers/order-placed.handler.ts
-import { OrderPlacedEvent, PaymentConfirmedEvent } from '@myorg/shared-contracts';
+import {
+  OrderPlacedEvent,
+  PaymentConfirmedEvent,
+} from "@myorg/shared-contracts";
 
 export class OrderPlacedHandler {
   constructor(
     private paymentProcessor: PaymentProcessor,
-    private eventBus: EventBus
+    private eventBus: EventBus,
   ) {}
 
   async handle(event: OrderPlacedEvent): Promise<void> {
     // ✅ Payment logic stays in the payment service
     const result = await this.paymentProcessor.charge(
       event.customerId,
-      event.totalAmount
+      event.totalAmount,
     );
 
     // ✅ Publish result — Order Service reacts to this event
     await this.eventBus.publish<PaymentConfirmedEvent>({
-      type: 'PaymentConfirmed',
+      type: "PaymentConfirmed",
       orderId: event.orderId,
       transactionId: result.transactionId,
       confirmedAt: new Date().toISOString(),
@@ -325,12 +331,15 @@ export class OrderPlacedHandler {
 }
 
 // inventory-service/src/handlers/payment-confirmed.handler.ts
-import { PaymentConfirmedEvent, InventoryReservedEvent } from '@myorg/shared-contracts';
+import {
+  PaymentConfirmedEvent,
+  InventoryReservedEvent,
+} from "@myorg/shared-contracts";
 
 export class PaymentConfirmedHandler {
   constructor(
     private inventoryRepo: InventoryRepository, // own database — only inventory tables
-    private eventBus: EventBus
+    private eventBus: EventBus,
   ) {}
 
   async handle(event: PaymentConfirmedEvent): Promise<void> {
@@ -338,7 +347,7 @@ export class PaymentConfirmedHandler {
     const reservation = await this.inventoryRepo.reserve(event.orderId);
 
     await this.eventBus.publish<InventoryReservedEvent>({
-      type: 'InventoryReserved',
+      type: "InventoryReserved",
       orderId: event.orderId,
       warehouseId: reservation.warehouseId,
       reservedAt: new Date().toISOString(),
@@ -419,6 +428,7 @@ public class CustomerManagementService
 ```
 
 **Coupling Analysis:**
+
 - Ce = 8 (depends on 8 external concerns)
 - Ca = high (many parts of the app call this service)
 - Instability = moderate, but the class is doing too much
@@ -501,12 +511,12 @@ public class AnalyticsHandler : INotificationHandler<OrderSubmitted>
 ```mermaid
 flowchart TD
     OS[OrderService<br/>Ce=2, Ca=high]
-    
+
     OS -->|"OrderSubmitted"| TH[TaxHandler<br/>Ce=1]
     OS -->|"OrderSubmitted"| IH[InventoryHandler<br/>Ce=1]
     OS -->|"OrderSubmitted"| NH[NotificationHandler<br/>Ce=2]
     OS -->|"OrderSubmitted"| AH[AnalyticsHandler<br/>Ce=1]
-    
+
     style OS fill:#4dabf7,color:#fff
 ```
 
@@ -604,14 +614,14 @@ flowchart LR
         P1[Payment Service] --> SM
         S1[Shipping Service] --> SM
     end
-    
+
     subgraph after ["✅ After: Tailored Models"]
         CA[Customer API]
         O2[Order Service<br/>OrderCustomer] -.->|"API call"| CA
         P2[Payment Service<br/>PaymentCustomer] -.->|"API call"| CA
         S2[Shipping Service<br/>ShippingCustomer] -.->|"API call"| CA
     end
-    
+
     style SM fill:#ff6b6b,color:#fff
     style CA fill:#69db7c,color:#333
 ```
@@ -638,32 +648,34 @@ When services call each other synchronously, they create temporal coupling — b
 class OrderService {
   async createOrder(req: CreateOrderRequest): Promise<Order> {
     // Step 1: Check payment (blocks)
-    const paymentResult = await fetch('http://payment-service/charge', {
-      method: 'POST',
+    const paymentResult = await fetch("http://payment-service/charge", {
+      method: "POST",
       body: JSON.stringify({ amount: req.total, customerId: req.customerId }),
     });
-    if (!paymentResult.ok) throw new Error('Payment failed');
+    if (!paymentResult.ok) throw new Error("Payment failed");
 
     // Step 2: Reserve inventory (blocks)
-    const inventoryResult = await fetch('http://inventory-service/reserve', {
-      method: 'POST',
+    const inventoryResult = await fetch("http://inventory-service/reserve", {
+      method: "POST",
       body: JSON.stringify({ productId: req.productId, qty: req.quantity }),
     });
     if (!inventoryResult.ok) {
       // Have to roll back payment!
-      await fetch('http://payment-service/refund', { /* ... */ });
-      throw new Error('Out of stock');
+      await fetch("http://payment-service/refund", {
+        /* ... */
+      });
+      throw new Error("Out of stock");
     }
 
     // Step 3: Create shipment (blocks)
-    const shipResult = await fetch('http://shipping-service/ship', {
-      method: 'POST',
-      body: JSON.stringify({ orderId: 'new', address: req.address }),
+    const shipResult = await fetch("http://shipping-service/ship", {
+      method: "POST",
+      body: JSON.stringify({ orderId: "new", address: req.address }),
     });
     // What if THIS fails? Roll back inventory AND payment?
     // This is getting really complicated...
 
-    return { id: 'new', status: 'confirmed' };
+    return { id: "new", status: "confirmed" };
   }
 }
 ```
@@ -676,21 +688,24 @@ class OrderService {
 
 // The saga orchestrator manages the workflow
 class OrderSaga {
-  constructor(private eventBus: EventBus, private orderRepo: OrderRepository) {}
+  constructor(
+    private eventBus: EventBus,
+    private orderRepo: OrderRepository,
+  ) {}
 
   async start(req: CreateOrderRequest): Promise<string> {
     const orderId = crypto.randomUUID();
-    
+
     // Save order in "pending" state
     await this.orderRepo.save({
       id: orderId,
-      status: 'pending_payment',
+      status: "pending_payment",
       ...req,
     });
 
     // Emit event — payment service will pick it up when ready
     await this.eventBus.publish({
-      type: 'OrderCreated',
+      type: "OrderCreated",
       orderId,
       customerId: req.customerId,
       total: req.total,
@@ -701,9 +716,9 @@ class OrderSaga {
 
   // React to payment result
   async onPaymentProcessed(event: PaymentProcessedEvent): Promise<void> {
-    await this.orderRepo.updateStatus(event.orderId, 'pending_inventory');
+    await this.orderRepo.updateStatus(event.orderId, "pending_inventory");
     await this.eventBus.publish({
-      type: 'PaymentConfirmed',
+      type: "PaymentConfirmed",
       orderId: event.orderId,
       transactionId: event.transactionId,
     });
@@ -711,15 +726,15 @@ class OrderSaga {
 
   // React to payment failure
   async onPaymentFailed(event: PaymentFailedEvent): Promise<void> {
-    await this.orderRepo.updateStatus(event.orderId, 'payment_failed');
+    await this.orderRepo.updateStatus(event.orderId, "payment_failed");
     // No rollback needed — nothing else happened yet
   }
 
   // React to inventory reserved
   async onInventoryReserved(event: InventoryReservedEvent): Promise<void> {
-    await this.orderRepo.updateStatus(event.orderId, 'confirmed');
+    await this.orderRepo.updateStatus(event.orderId, "confirmed");
     await this.eventBus.publish({
-      type: 'OrderConfirmed',
+      type: "OrderConfirmed",
       orderId: event.orderId,
     });
   }
@@ -739,19 +754,19 @@ sequenceDiagram
     OrderSvc->>OrderSvc: Save (pending)
     OrderSvc-->>Client: 202 Accepted (orderId)
     OrderSvc->>Bus: OrderCreated
-    
+
     Bus->>PaySvc: OrderCreated
     PaySvc->>PaySvc: Process payment
     PaySvc->>Bus: PaymentConfirmed
-    
+
     Bus->>InvSvc: PaymentConfirmed
     InvSvc->>InvSvc: Reserve stock
     InvSvc->>Bus: InventoryReserved
-    
+
     Bus->>ShipSvc: InventoryReserved
     ShipSvc->>ShipSvc: Create shipment
     ShipSvc->>Bus: ShipmentCreated
-    
+
     Bus->>OrderSvc: ShipmentCreated
     OrderSvc->>OrderSvc: Update to "shipped"
 ```
@@ -773,23 +788,23 @@ A pragmatic middle ground between monolith and microservices. Mark Richards desc
 ```mermaid
 flowchart TD
     GW[API Gateway]
-    
+
     GW --> OS[Order Service]
     GW --> CS[Customer Service]
     GW --> IS[Inventory Service]
     GW --> PS[Payment Service]
     GW --> RS[Reporting Service]
-    
+
     OS --> DB[(Shared Database)]
     CS --> DB
     IS --> DB
     PS --> DB
     RS --> DB
-    
+
     OS -.->|"Internal API"| CS
     OS -.->|"Internal API"| IS
     OS -.->|"Internal API"| PS
-    
+
     style OS fill:#4dabf7,color:#fff
     style CS fill:#4dabf7,color:#fff
     style IS fill:#4dabf7,color:#fff
@@ -800,22 +815,22 @@ flowchart TD
 
 **How this differs from a distributed monolith:**
 
-| | Distributed Monolith (Scenario 1) | Service-Based Architecture |
-|---|---|---|
-| **Database** | All services read/write all tables | Each service owns its tables; cross-service access goes through APIs |
-| **Service calls** | Tangled web of synchronous calls in every direction | Controlled, one-directional API calls between service boundaries |
-| **Business logic** | Scattered across multiple services | Each service owns all logic for its domain |
-| **Deployability** | Change one service → redeploy many | Each service deploys independently (schema changes require coordination) |
-| **Domain knowledge** | Every service knows internal models of other services | Services know only the API contracts of other services |
+|                      | Distributed Monolith (Scenario 1)                     | Service-Based Architecture                                               |
+| -------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Database**         | All services read/write all tables                    | Each service owns its tables; cross-service access goes through APIs     |
+| **Service calls**    | Tangled web of synchronous calls in every direction   | Controlled, one-directional API calls between service boundaries         |
+| **Business logic**   | Scattered across multiple services                    | Each service owns all logic for its domain                               |
+| **Deployability**    | Change one service → redeploy many                    | Each service deploys independently (schema changes require coordination) |
+| **Domain knowledge** | Every service knows internal models of other services | Services know only the API contracts of other services                   |
 
 ### Coupling Analysis
 
-| Dimension | Value | Why |
-|---|---|---|
-| Integration Strength | 🟡 Model | Services share the database schema (model coupling), but each owns its tables |
-| Distance | 🟢 Low-Medium | Separate deployments but same infrastructure and shared database |
-| Volatility | 🟡 Medium | Core domains change independently but share data model |
-| **Verdict** | ✅ | **Pragmatic balance — less coupling than a monolith, far less overhead than microservices** |
+| Dimension            | Value         | Why                                                                                         |
+| -------------------- | ------------- | ------------------------------------------------------------------------------------------- |
+| Integration Strength | 🟡 Model      | Services share the database schema (model coupling), but each owns its tables               |
+| Distance             | 🟢 Low-Medium | Separate deployments but same infrastructure and shared database                            |
+| Volatility           | 🟡 Medium     | Core domains change independently but share data model                                      |
+| **Verdict**          | ✅            | **Pragmatic balance — less coupling than a monolith, far less overhead than microservices** |
 
 ### TypeScript — Service-Based Architecture
 
@@ -825,7 +840,7 @@ flowchart TD
 
 export class OrderService {
   constructor(
-    private orderRepo: OrderRepository,        // own tables in shared DB
+    private orderRepo: OrderRepository, // own tables in shared DB
     private customerApi: CustomerServiceClient, // internal HTTP call
     private inventoryApi: InventoryServiceClient,
     private paymentApi: PaymentServiceClient,
@@ -834,24 +849,28 @@ export class OrderService {
   async placeOrder(request: PlaceOrderRequest): Promise<Order> {
     // ✅ Service boundary — call customer service's API, not its tables
     const customer = await this.customerApi.getCustomer(request.customerId);
-    if (customer.status !== 'active') {
+    if (customer.status !== "active") {
       throw new Error(`Customer ${request.customerId} is not active`);
     }
 
     // ✅ Service boundary — call inventory service's API
     const available = await this.inventoryApi.checkAvailability(
-      request.productId, request.quantity
+      request.productId,
+      request.quantity,
     );
     if (!available) {
-      throw new Error(`Insufficient inventory for product ${request.productId}`);
+      throw new Error(
+        `Insufficient inventory for product ${request.productId}`,
+      );
     }
 
     // ✅ Service boundary — call payment service's API
     const creditCheck = await this.paymentApi.checkCredit(
-      request.customerId, request.quantity * request.unitPrice
+      request.customerId,
+      request.quantity * request.unitPrice,
     );
     if (!creditCheck.approved) {
-      throw new Error('Credit check failed');
+      throw new Error("Credit check failed");
     }
 
     // ✅ Own domain logic stays local — only writes to ORDER tables
@@ -860,11 +879,15 @@ export class OrderService {
       productId: request.productId,
       quantity: request.quantity,
       total: request.quantity * request.unitPrice,
-      status: 'confirmed',
+      status: "confirmed",
     });
 
     // ✅ Reserve inventory via API (not by writing to inventory tables)
-    await this.inventoryApi.reserve(request.productId, request.quantity, order.id);
+    await this.inventoryApi.reserve(
+      request.productId,
+      request.quantity,
+      order.id,
+    );
 
     return order;
   }
@@ -986,13 +1009,13 @@ public class OrderDomainService {
 
 ### When to Choose Service-Based Architecture
 
-| ✅ Good Fit | ❌ Poor Fit |
-|---|---|
-| Team of 5–25 engineers | 100+ engineers requiring fully independent deployment cadences |
-| Limited DevOps maturity or infrastructure budget | Mature platform team with full observability and service mesh |
-| You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features |
-| Your monolith has identifiable domain boundaries | Your system has no domain cohesion — it's a big ball of mud |
-| Evolutionary stepping stone → microservices if needed | Greenfield with clear bounded contexts and strong platform team |
+| ✅ Good Fit                                                        | ❌ Poor Fit                                                     |
+| ------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Team of 5–25 engineers                                             | 100+ engineers requiring fully independent deployment cadences  |
+| Limited DevOps maturity or infrastructure budget                   | Mature platform team with full observability and service mesh   |
+| You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features                 |
+| Your monolith has identifiable domain boundaries                   | Your system has no domain cohesion — it's a big ball of mud     |
+| Evolutionary stepping stone → microservices if needed              | Greenfield with clear bounded contexts and strong platform team |
 
 ---
 
@@ -1008,19 +1031,19 @@ flowchart TD
         MQ[Message Queue<br/>Publisher]
         EXT[External API<br/>Client]
     end
-    
+
     subgraph Ports ["Ports (Interfaces)"]
         IP[Inbound Ports<br/>Use Cases]
         OP[Outbound Ports<br/>Repositories, Gateways]
     end
-    
+
     subgraph Core ["Domain Core"]
         E[Entities]
         VS[Value Objects]
         DS[Domain Services]
         DE[Domain Events]
     end
-    
+
     HA -->|calls| IP
     IP -->|uses| Core
     Core -->|defines| OP
@@ -1040,12 +1063,12 @@ export class Order {
     public readonly id: string,
     public readonly customerId: string,
     private items: OrderItem[],
-    private _status: OrderStatus
+    private _status: OrderStatus,
   ) {}
 
   static create(customerId: string, items: OrderItem[]): Order {
-    if (items.length === 0) throw new DomainError('Order must have items');
-    return new Order(crypto.randomUUID(), customerId, items, 'draft');
+    if (items.length === 0) throw new DomainError("Order must have items");
+    return new Order(crypto.randomUUID(), customerId, items, "draft");
   }
 
   get total(): number {
@@ -1053,11 +1076,14 @@ export class Order {
   }
 
   confirm(): void {
-    if (this._status !== 'draft') throw new DomainError('Can only confirm draft orders');
-    this._status = 'confirmed';
+    if (this._status !== "draft")
+      throw new DomainError("Can only confirm draft orders");
+    this._status = "confirmed";
   }
 
-  get status(): OrderStatus { return this._status; }
+  get status(): OrderStatus {
+    return this._status;
+  }
 }
 
 // domain/ports/outbound.ts — Domain defines what it needs
@@ -1082,32 +1108,36 @@ export interface CreateOrderUseCase {
 // ======= APPLICATION (orchestration) =======
 
 // application/create-order.ts
-import { CreateOrderUseCase } from '../domain/ports/inbound';
-import { OrderRepository, PaymentGateway, EventPublisher } from '../domain/ports/outbound';
-import { Order } from '../domain/entities/order';
+import { CreateOrderUseCase } from "../domain/ports/inbound";
+import {
+  OrderRepository,
+  PaymentGateway,
+  EventPublisher,
+} from "../domain/ports/outbound";
+import { Order } from "../domain/entities/order";
 
 export class CreateOrderHandler implements CreateOrderUseCase {
   constructor(
-    private orders: OrderRepository,      // injected
-    private payments: PaymentGateway,      // injected
-    private events: EventPublisher         // injected
+    private orders: OrderRepository, // injected
+    private payments: PaymentGateway, // injected
+    private events: EventPublisher, // injected
   ) {}
 
   async execute(cmd: CreateOrderCommand): Promise<string> {
     const order = Order.create(cmd.customerId, cmd.items);
-    
+
     const payment = await this.payments.charge(cmd.customerId, order.total);
     if (!payment.success) throw new PaymentFailedError(payment.reason);
-    
+
     order.confirm();
     await this.orders.save(order);
-    
+
     await this.events.publish({
-      type: 'OrderConfirmed',
+      type: "OrderConfirmed",
       orderId: order.id,
       total: order.total,
     });
-    
+
     return order.id;
   }
 }
@@ -1115,30 +1145,34 @@ export class CreateOrderHandler implements CreateOrderUseCase {
 // ======= ADAPTERS (infrastructure) =======
 
 // adapters/postgres-order-repository.ts
-import { OrderRepository } from '../domain/ports/outbound';
-import { Order } from '../domain/entities/order';
-import { Pool } from 'pg';
+import { OrderRepository } from "../domain/ports/outbound";
+import { Order } from "../domain/entities/order";
+import { Pool } from "pg";
 
 export class PostgresOrderRepository implements OrderRepository {
   constructor(private pool: Pool) {}
 
   async save(order: Order): Promise<void> {
     await this.pool.query(
-      'INSERT INTO orders (id, customer_id, total, status) VALUES ($1, $2, $3, $4)',
-      [order.id, order.customerId, order.total, order.status]
+      "INSERT INTO orders (id, customer_id, total, status) VALUES ($1, $2, $3, $4)",
+      [order.id, order.customerId, order.total, order.status],
     );
   }
 
   async findById(id: string): Promise<Order | null> {
-    const result = await this.pool.query('SELECT * FROM orders WHERE id = $1', [id]);
+    const result = await this.pool.query("SELECT * FROM orders WHERE id = $1", [
+      id,
+    ]);
     return result.rows[0] ? this.toDomain(result.rows[0]) : null;
   }
 
-  private toDomain(row: any): Order { /* mapping logic */ }
+  private toDomain(row: any): Order {
+    /* mapping logic */
+  }
 }
 
 // adapters/stripe-payment-gateway.ts
-import { PaymentGateway, PaymentResult } from '../domain/ports/outbound';
+import { PaymentGateway, PaymentResult } from "../domain/ports/outbound";
 
 export class StripePaymentGateway implements PaymentGateway {
   constructor(private stripeKey: string) {}
@@ -1148,21 +1182,21 @@ export class StripePaymentGateway implements PaymentGateway {
     const stripe = new Stripe(this.stripeKey);
     const intent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
-      currency: 'usd',
+      currency: "usd",
       customer: customerId,
     });
-    return { success: intent.status === 'succeeded', transactionId: intent.id };
+    return { success: intent.status === "succeeded", transactionId: intent.id };
   }
 }
 
 // adapters/http/order-controller.ts
-import { CreateOrderUseCase } from '../../domain/ports/inbound';
-import express from 'express';
+import { CreateOrderUseCase } from "../../domain/ports/inbound";
+import express from "express";
 
 export function orderRoutes(createOrder: CreateOrderUseCase): express.Router {
   const router = express.Router();
 
-  router.post('/orders', async (req, res) => {
+  router.post("/orders", async (req, res) => {
     try {
       const orderId = await createOrder.execute(req.body);
       res.status(201).json({ orderId });
@@ -1250,14 +1284,14 @@ public class CreateOrderHandler
     public async Task<string> Handle(CreateOrderCommand cmd)
     {
         var order = Order.Create(cmd.CustomerId, cmd.Items);
-        
+
         var payment = await _payments.Charge(cmd.CustomerId, order.Total);
         if (!payment.Success) throw new PaymentFailedException(payment.Reason);
-        
+
         order.Confirm();
         await _orders.Save(order);
         await _events.Publish(new OrderConfirmedEvent(order.Id, order.Total));
-        
+
         return order.Id;
     }
 }
@@ -1364,14 +1398,14 @@ public class CreateOrderHandler {
     @Transactional
     public String handle(CreateOrderCommand cmd) {
         var order = Order.create(cmd.customerId(), cmd.items());
-        
+
         var payment = payments.charge(cmd.customerId(), order.getTotal());
         if (!payment.success()) throw new PaymentFailedException(payment.reason());
-        
+
         order.confirm();
         orders.save(order);
         events.publish(new OrderConfirmedEvent(order.getId(), order.getTotal()));
-        
+
         return order.getId();
     }
 }
@@ -1405,7 +1439,7 @@ public class StripePaymentGateway implements PaymentGateway {
             .setCurrency("usd")
             .setCustomer(customerId)
             .build();
-        
+
         PaymentIntent intent = PaymentIntent.create(params);
         return new PaymentResult("succeeded".equals(intent.getStatus()), intent.getId());
     }
@@ -1426,12 +1460,12 @@ flowchart TD
         SBA["Service-Based Architecture<br/>✅ Coarse-grained services, owned tables, API boundaries"]
         HEX["Hexagonal/Ports+Adapters<br/>✅ Contract coupling, clear boundaries"]
     end
-    
+
     DM -->|"Fix with"| EV[Event-driven + Own databases]
     GS -->|"Fix with"| CQRS[Domain events + SRP]
     SL -->|"Fix with"| ACL[Anti-corruption layers]
     TC -->|"Fix with"| ASYNC[Async messaging + Sagas]
-    
+
     style DM fill:#ff6b6b,color:#fff
     style GS fill:#ff6b6b,color:#fff
     style SL fill:#ff6b6b,color:#fff

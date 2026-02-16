@@ -2,9 +2,9 @@
 
 [← Back to Main Guide](README.md) | [← Dimensions](coupling-dimensions.md)
 
-> *"Not only could we see the positive change in the class diagram, but we could*
-> *also confirm that refactoring goals have been accomplished by looking at*
-> *coupling and instability metrics."*
+> _"Not only could we see the positive change in the class diagram, but we could_
+> _also confirm that refactoring goals have been accomplished by looking at_
+> _coupling and instability metrics."_
 > — Zoran Horvat
 
 This guide covers the classical coupling metrics (efferent, afferent, instability, abstractness), shows how to use them to guide refactoring, and includes an important critical perspective on when these metrics can mislead you.
@@ -13,53 +13,54 @@ This guide covers the classical coupling metrics (efferent, afferent, instabilit
 
 ## The Classical Metrics
 
-### Efferent Coupling (Ce) — *"Who do I depend on?"*
+### Efferent Coupling (Ce) — _"Who do I depend on?"_
 
-**Efferent coupling** counts how many *external* types a component refers to. It measures outgoing dependencies.
+**Efferent coupling** counts how many _external_ types a component refers to. It measures outgoing dependencies.
 
 ```mermaid
 flowchart LR
     A[My Component] -->|depends on| B[Component B]
     A -->|depends on| C[Component C]
     A -->|depends on| D[Component D]
-    
+
     Result["Ce = 3"]
-    
+
     style A fill:#4dabf7,color:#fff
     style Result fill:#e9ecef,stroke:#333
 ```
 
 **ELI5:** Efferent coupling is like counting how many different stores you need to visit to cook dinner. The more stores, the more your dinner plan is affected by store closures and price changes.
 
-### Afferent Coupling (Ca) — *"Who depends on me?"*
+### Afferent Coupling (Ca) — _"Who depends on me?"_
 
-**Afferent coupling** counts how many *external* types refer to this component. It measures incoming dependencies.
+**Afferent coupling** counts how many _external_ types refer to this component. It measures incoming dependencies.
 
 ```mermaid
 flowchart LR
     B[Component B] -->|depends on| A[My Component]
     C[Component C] -->|depends on| A
     D[Component D] -->|depends on| A
-    
+
     Result["Ca = 3"]
-    
+
     style A fill:#ff6b6b,color:#fff
     style Result fill:#e9ecef,stroke:#333
 ```
 
 **ELI5:** Afferent coupling is like counting how many people have your phone number. Change your number, and that's how many people you need to notify.
 
-### Instability (I) — *"How free am I to change?"*
+### Instability (I) — _"How free am I to change?"_
 
 $$I = \frac{C_e}{C_a + C_e}$$
 
-| I value | Meaning | Implication |
-|---|---|---|
-| **0.0** | Absolutely stable | Everyone depends on you. Changes here break everything. Design it carefully! |
-| **0.5** | Neutral | Risky — changes might cascade in either direction |
-| **1.0** | Absolutely unstable | You depend on others, but nobody depends on you. Change freely! |
+| I value | Meaning             | Implication                                                                  |
+| ------- | ------------------- | ---------------------------------------------------------------------------- |
+| **0.0** | Absolutely stable   | Everyone depends on you. Changes here break everything. Design it carefully! |
+| **0.5** | Neutral             | Risky — changes might cascade in either direction                            |
+| **1.0** | Absolutely unstable | You depend on others, but nobody depends on you. Change freely!              |
 
-**ELI5:** Instability is like asking *"Who has more power — the celebrity or the fan?"*
+**ELI5:** Instability is like asking _"Who has more power — the celebrity or the fan?"_
+
 - A celebrity (I=0, stable) can't change their phone number without a PR disaster — millions depend on them.
 - A fan (I=1, unstable) can change their number anytime — nobody's affected, but they have to keep up with the celebrity's schedule.
 
@@ -86,11 +87,11 @@ quadrantChart
     quadrant-4 Ideal Zone
 ```
 
-| Zone | What it means | Example |
-|---|---|---|
-| **Zone of Pain** | Stable but concrete — hard to extend, everyone depends on it | A concrete utility class used everywhere with no interface |
-| **Zone of Uselessness** | Unstable but abstract — lots of interfaces nobody uses | An interface layer that wraps every single class "just in case" |
-| **Main Line** | Good balance — stable things are abstract, unstable things are concrete | Interfaces in core, implementations in infrastructure |
+| Zone                    | What it means                                                           | Example                                                         |
+| ----------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Zone of Pain**        | Stable but concrete — hard to extend, everyone depends on it            | A concrete utility class used everywhere with no interface      |
+| **Zone of Uselessness** | Unstable but abstract — lots of interfaces nobody uses                  | An interface layer that wraps every single class "just in case" |
+| **Main Line**           | Good balance — stable things are abstract, unstable things are concrete | Interfaces in core, implementations in infrastructure           |
 
 ---
 
@@ -146,7 +147,7 @@ namespace Presentation
     public class UserView
     {
         public void Draw(UserViewModel model) { /* render UI */ }
-        
+
         public void ShowUser(string name)
         {
             // ❌ Presentation directly references Domain's concrete class
@@ -173,10 +174,10 @@ namespace Domain
         {
             var repo = new Infrastructure.Repository<User>(); // ❌ Domain references Infrastructure
             var user = repo.GetById(name);
-            return new Presentation.UserViewModel 
-            { 
-                Name = user.Name, 
-                Email = user.Email 
+            return new Presentation.UserViewModel
+            {
+                Name = user.Name,
+                Email = user.Email
             };
         }
     }
@@ -194,11 +195,11 @@ namespace Infrastructure
 
 #### Measuring the metrics
 
-| Module | Classes Referenced Outside (Ce) | Classes Referenced By Outside (Ca) | Instability I = Ce/(Ce+Ca) |
-|---|---|---|---|
-| **Presentation** | 1 (UserServices) | 1 (UserViewModel used by Domain) | 0.50 |
-| **Domain** | 2 (UserViewModel + Repository) | 1 (UserServices used by Presentation) | 0.67 |
-| **Infrastructure** | 0 | 1 (Repository used by Domain) | **0.00** |
+| Module             | Classes Referenced Outside (Ce) | Classes Referenced By Outside (Ca)    | Instability I = Ce/(Ce+Ca) |
+| ------------------ | ------------------------------- | ------------------------------------- | -------------------------- |
+| **Presentation**   | 1 (UserServices)                | 1 (UserViewModel used by Domain)      | 0.50                       |
+| **Domain**         | 2 (UserViewModel + Repository)  | 1 (UserServices used by Presentation) | 0.67                       |
+| **Infrastructure** | 0                               | 1 (Repository used by Domain)         | **0.00**                   |
 
 #### What's wrong?
 
@@ -209,16 +210,17 @@ flowchart TB
         P2["Domain I=0.67<br/>Has circular dependency with Presentation"]
         P3["Infrastructure I=0.00<br/>Should be LESS stable (I→1)<br/>Infrastructure should adapt to the app, not vice versa"]
     end
-    
+
     style P1 fill:#ffcccc
     style P2 fill:#ffcccc
     style P3 fill:#ffcccc
 ```
 
 **Problems:**
+
 1. **Presentation** has I=0.50 — it's not stable enough. If Domain changes, Presentation might break. But Presentation is what users see!
-2. **Infrastructure** has I=0.00 — it's *too* stable. Everyone adapts to infrastructure instead of infrastructure adapting to the application.
-3. **Domain** references *both* directions — circular dependency with Presentation.
+2. **Infrastructure** has I=0.00 — it's _too_ stable. Everyone adapts to infrastructure instead of infrastructure adapting to the application.
+3. **Domain** references _both_ directions — circular dependency with Presentation.
 
 ### Step 2: Apply Dependency Inversion Principle (DIP)
 
@@ -241,11 +243,11 @@ classDiagram
 
     UserView ..> UserViewModel
     UserView ..> IUserServices
-    
+
     UserServices ..|> IUserServices : implements
     UserServices ..> User
     UserServices --> IRepositoryT
-    
+
     RepositoryT ..|> IRepositoryT : implements
 
     namespace Presentation {
@@ -342,10 +344,10 @@ namespace Infrastructure
 {
     public class Repository<T> : Domain.IRepository<T>
     {
-        public T GetById(string id) 
-        { 
+        public T GetById(string id)
+        {
             // Database access implementation
-            return default!; 
+            return default!;
         }
     }
 }
@@ -366,8 +368,8 @@ export interface IUserServices {
 }
 
 // presentation/user-view.ts
-import { IUserServices } from './ports';
-import { UserViewModel } from './types';
+import { IUserServices } from "./ports";
+import { UserViewModel } from "./types";
 
 export class UserView {
   constructor(private userServices: IUserServices) {} // ✅ interface
@@ -377,7 +379,9 @@ export class UserView {
     this.draw(vm);
   }
 
-  draw(model: UserViewModel): void { /* render */ }
+  draw(model: UserViewModel): void {
+    /* render */
+  }
 }
 
 // domain/user.ts
@@ -392,9 +396,9 @@ export interface IRepository<T> {
 }
 
 // domain/user-services.ts — implements Presentation's port
-import { IUserServices, UserViewModel } from '../presentation/ports';
-import { User } from './user';
-import { IRepository } from './ports';
+import { IUserServices, UserViewModel } from "../presentation/ports";
+import { User } from "./user";
+import { IRepository } from "./ports";
 
 export class UserServices implements IUserServices {
   constructor(private repo: IRepository<User>) {}
@@ -406,8 +410,8 @@ export class UserServices implements IUserServices {
 }
 
 // infrastructure/user-repository.ts — implements Domain's port
-import { IRepository } from '../domain/ports';
-import { User } from '../domain/user';
+import { IRepository } from "../domain/ports";
+import { User } from "../domain/user";
 
 export class UserRepository implements IRepository<User> {
   async getById(id: string): Promise<User> {
@@ -483,11 +487,11 @@ public class UserRepository implements com.example.domain.IRepository<com.exampl
 
 ### Step 3: Measure Again
 
-| Module | Ce | Ca | I = Ce/(Ce+Ca) | Change |
-|---|---|---|---|---|
-| **Presentation** | 0 | 1 | **0.00** | 0.50 → 0.00 ✅ |
-| **Domain** | 2 | 1 | **0.67** | same |
-| **Infrastructure** | 1 | 0 | **1.00** | 0.00 → 1.00 ✅ |
+| Module             | Ce  | Ca  | I = Ce/(Ce+Ca) | Change         |
+| ------------------ | --- | --- | -------------- | -------------- |
+| **Presentation**   | 0   | 1   | **0.00**       | 0.50 → 0.00 ✅ |
+| **Domain**         | 2   | 1   | **0.67**       | same           |
+| **Infrastructure** | 1   | 0   | **1.00**       | 0.00 → 1.00 ✅ |
 
 ```mermaid
 flowchart TB
@@ -496,13 +500,14 @@ flowchart TB
         R2["Domain I=0.67<br/>Balanced — depends on Presentation<br/>contracts, depended on by Infrastructure"]
         R3["Infrastructure I=1.00<br/>Absolutely unstable ✅<br/>Adapts to the application's needs"]
     end
-    
+
     style R1 fill:#d3f9d8
     style R2 fill:#fff3bf
     style R3 fill:#d3f9d8
 ```
 
 **What changed:**
+
 - **Presentation** is now absolutely stable (I=0.00) — nobody depends on anything outside Presentation. ✅
 - **Infrastructure** is now absolutely unstable (I=1.00) — it adapts to Domain's contracts. ✅
 - **Dependencies flow upward** — lower layers depend on upper layers through interfaces. ✅
@@ -516,6 +521,7 @@ Oliver Drotbohm raises a critical counterpoint that every team should understand
 ### The Problem with Abstractness-as-a-Metric
 
 The instability-abstractness relationship assumes:
+
 - **Stable packages should be abstract** (lots of interfaces)
 - **Unstable packages should be concrete** (implementations)
 
@@ -527,12 +533,12 @@ flowchart LR
         C1[Concrete Class] -->|"Extract interface"| I1[IConcreteClass]
         I1 -.->|"Same level<br/>of abstraction"| C1
     end
-    
+
     subgraph right ["✅ Meaningful Abstraction"]
         C2[StripePaymentProcessor] -->|"Abstracts to"| I2[PaymentGateway]
         I2 -.->|"Higher level<br/>of abstraction"| C2
     end
-    
+
     wrong -->|"Metric improves<br/>Design does NOT"| Bad["Metric gaming 🎮"]
     right -->|"Both improve"| Good["Real improvement ✅"]
 ```
@@ -541,7 +547,7 @@ flowchart LR
 
 > **Just because you extract an interface from a class doesn't make the package more abstract in any meaningful way.**
 >
-> The interface `IUserRepository` has the same *semantic level* as `UserRepository`. If `UserRepository`'s contract changes, `IUserRepository` must change too. You haven't reduced coupling — you've just added a level of indirection.
+> The interface `IUserRepository` has the same _semantic level_ as `UserRepository`. If `UserRepository`'s contract changes, `IUserRepository` must change too. You haven't reduced coupling — you've just added a level of indirection.
 
 ### When Are Interfaces Actually Useful?
 
@@ -564,9 +570,15 @@ interface IUserRepository {
 
 class UserRepository implements IUserRepository {
   // This is the only implementation. Ever.
-  async findById(id: string): Promise<User> { /* ... */ }
-  async save(user: User): Promise<void> { /* ... */ }
-  async delete(id: string): Promise<void> { /* ... */ }
+  async findById(id: string): Promise<User> {
+    /* ... */
+  }
+  async save(user: User): Promise<void> {
+    /* ... */
+  }
+  async delete(id: string): Promise<void> {
+    /* ... */
+  }
 }
 ```
 
@@ -578,18 +590,25 @@ interface MessageBroker {
 }
 
 // Multiple real implementations
-class KafkaMessageBroker implements MessageBroker { /* ... */ }
-class SQSMessageBroker implements MessageBroker { /* ... */ }
-class InMemoryMessageBroker implements MessageBroker { /* ... */ } // for testing
+class KafkaMessageBroker implements MessageBroker {
+  /* ... */
+}
+class SQSMessageBroker implements MessageBroker {
+  /* ... */
+}
+class InMemoryMessageBroker implements MessageBroker {
+  /* ... */
+} // for testing
 ```
 
 ### Change Patterns in Real Applications
 
 Drotbohm observes that in typical business applications, changes usually involve:
+
 - **Introducing entirely new abstractions** (new features, new domain concepts)
 - **Modifying existing types** (adding new methods, fields)
 
-In both cases, it largely doesn't matter whether you're modifying an interface or a class. The metric doesn't capture the *kind* of changes that actually happen.
+In both cases, it largely doesn't matter whether you're modifying an interface or a class. The metric doesn't capture the _kind_ of changes that actually happen.
 
 ### Practical Takeaway
 
@@ -610,6 +629,7 @@ flowchart TD
 ### TypeScript / JavaScript
 
 Tools for measuring coupling:
+
 - **[dependency-cruiser](https://github.com/sverweij/dependency-cruiser)** — visualizes and validates module dependencies
 - **[madge](https://github.com/pahen/madge)** — generates dependency graphs, finds circular dependencies
 - **[eslint-plugin-import](https://github.com/import-js/eslint-plugin-import)** — lint rules for import/export coupling
@@ -632,30 +652,31 @@ Example dependency-cruiser rule:
 module.exports = {
   forbidden: [
     {
-      name: 'no-circular',
-      severity: 'error',
+      name: "no-circular",
+      severity: "error",
       from: {},
-      to: { circular: true }
+      to: { circular: true },
     },
     {
-      name: 'domain-cannot-depend-on-infrastructure',
-      severity: 'error',
-      from: { path: '^src/domain' },
-      to: { path: '^src/infrastructure' }
+      name: "domain-cannot-depend-on-infrastructure",
+      severity: "error",
+      from: { path: "^src/domain" },
+      to: { path: "^src/infrastructure" },
     },
     {
-      name: 'presentation-cannot-depend-on-infrastructure',
-      severity: 'error',
-      from: { path: '^src/presentation' },
-      to: { path: '^src/infrastructure' }
-    }
-  ]
+      name: "presentation-cannot-depend-on-infrastructure",
+      severity: "error",
+      from: { path: "^src/presentation" },
+      to: { path: "^src/infrastructure" },
+    },
+  ],
 };
 ```
 
 ### C# / .NET
 
 Tools:
+
 - **[NDepend](https://www.ndepend.com/)** — comprehensive code analysis with coupling metrics
 - **[Microsoft.DependencyAnalysis](https://learn.microsoft.com/en-us/dotnet/architecture/)** — built-in architecture analysis
 - **[ArchUnitNET](https://github.com/TNG/ArchUnitNET)** — architecture tests in code
@@ -699,6 +720,7 @@ public class ArchitectureTests
 ### Java
 
 Tools:
+
 - **[ArchUnit](https://www.archunit.org/)** — architecture tests
 - **[JDepend](https://github.com/clarkware/jdepend)** — calculates coupling metrics (Ce, Ca, I, A, D)
 - **[Structure101](https://structure101.com/)** — visualizes coupling and dependencies
@@ -719,11 +741,11 @@ public class ArchitectureTest {
             .layer("Presentation").definedBy("com.example.presentation..")
             .layer("Domain").definedBy("com.example.domain..")
             .layer("Infrastructure").definedBy("com.example.infrastructure..")
-            
+
             .whereLayer("Presentation").mayNotBeAccessedByAnyLayer()
             .whereLayer("Domain").mayOnlyBeAccessedByLayers("Presentation", "Infrastructure")
             .whereLayer("Infrastructure").mayNotBeAccessedByAnyLayer()
-            
+
             .check(new ClassFileImporter().importPackages("com.example"));
     }
 
@@ -742,13 +764,13 @@ public class ArchitectureTest {
 
 ## Summary: Metrics Cheat Sheet
 
-| Metric | Formula | What it tells you | Goal |
-|---|---|---|---|
-| **Efferent Coupling (Ce)** | Count of outgoing dependencies | How much you depend on others | Lower for stable components |
-| **Afferent Coupling (Ca)** | Count of incoming dependencies | How much others depend on you | Higher for core components |
-| **Instability (I)** | Ce / (Ce + Ca) | How free you are to change | 0.0 for core, 1.0 for infra |
-| **Abstractness (A)** | Abstract types / Total types | Ratio of interfaces to classes | Use thoughtfully — don't game it |
-| **Distance (D)** | \|A + I - 1\| / √2 | Distance from the ideal line | Close to 0 is good, but read the fine print |
+| Metric                     | Formula                        | What it tells you              | Goal                                        |
+| -------------------------- | ------------------------------ | ------------------------------ | ------------------------------------------- |
+| **Efferent Coupling (Ce)** | Count of outgoing dependencies | How much you depend on others  | Lower for stable components                 |
+| **Afferent Coupling (Ca)** | Count of incoming dependencies | How much others depend on you  | Higher for core components                  |
+| **Instability (I)**        | Ce / (Ce + Ca)                 | How free you are to change     | 0.0 for core, 1.0 for infra                 |
+| **Abstractness (A)**       | Abstract types / Total types   | Ratio of interfaces to classes | Use thoughtfully — don't game it            |
+| **Distance (D)**           | \|A + I - 1\| / √2             | Distance from the ideal line   | Close to 0 is good, but read the fine print |
 
 ### Key takeaways:
 
