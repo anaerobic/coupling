@@ -141,7 +141,12 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
   });
 
   // Step 1: Payment. The order id is the idempotency key for the charge.
-  const paymentId = await validatePayment(order.id, order.customerId, order.total);
+  const paymentId = await validatePayment(
+    order.id,
+    order.customerId,
+    order.paymentMethodId,
+    order.total,
+  );
 
   if (cancelled) {
     await refundPayment(paymentId);
@@ -171,6 +176,7 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 - Activities are accessed through `proxyActivities`, a contract-based proxy. The Workflow never imports the Activity _implementations_, only their _type signatures_.
 - Compensation (refund, release) is co-located with the business logic, not scattered across event handlers.
 - The Signal handler shows contract coupling: external callers know only the signal name and shape, not the Workflow's internal state.
+- This example compensates only on cancellation. If `reserveInventory` or `createShipment` exhausts its retries, the Workflow fails with the payment still taken. The [saga section](#the-saga-pattern-before-and-after-temporal) adds the compensation stack that covers ordinary failures.
 
 ### Activities: The Side-Effect Boundary
 
@@ -211,7 +217,12 @@ import { Pool } from "pg";
 import type { Address, ShippingClient } from "./types";
 
 export interface OrderActivities {
-  validatePayment(orderId: string, customerId: string, amount: number): Promise<string>;
+  validatePayment(
+    orderId: string,
+    customerId: string,
+    paymentMethodId: string,
+    amount: number,
+  ): Promise<string>;
   reserveInventory(orderId: string, productId: string, qty: number): Promise<string>;
   createShipment(address: Address, reservationId: string): Promise<string>;
   refundPayment(paymentId: string): Promise<void>;
@@ -224,16 +235,19 @@ export function createOrderActivities(
   shippingApi: ShippingClient,
 ): OrderActivities {
   return {
-    async validatePayment(orderId, customerId, amount) {
+    async validatePayment(orderId, customerId, paymentMethodId, amount) {
       // 🔵 Knowledge of Stripe's public API lives HERE, not in the Workflow.
       // Temporal retries this Activity, so the charge must be idempotent:
-      // Stripe replays the first result for a repeated idempotency key.
+      // Stripe replays the first result for a repeated idempotency key for
+      // at least 24 hours. A retry later than that must look the intent up
+      // by order id before creating another.
       const intent = await stripe.paymentIntents.create(
         {
           amount: Math.round(amount * 100),
           currency: "usd",
           customer: customerId,
-          confirm: true, // otherwise the intent waits for a payment method
+          payment_method: paymentMethodId, // the saved method to charge
+          confirm: true, // otherwise the intent waits for confirmation
           off_session: true,
         },
         { idempotencyKey: `pay-${orderId}` },
@@ -281,7 +295,12 @@ export function createOrderActivities(
     },
 
     async createShipment(address, reservationId) {
-      return shippingApi.create({ address, reservationId });
+      // The reservation id doubles as the shipment's idempotency key, so a
+      // retried attempt gets the shipment already created, not a second one
+      return shippingApi.create(
+        { address, reservationId },
+        { idempotencyKey: `ship-${reservationId}` },
+      );
     },
 
     async refundPayment(paymentId) {
@@ -317,7 +336,7 @@ export function createOrderActivities(
 | Activity → Stripe API       | 🔵 Contract (public, versioned API)                    | 🔴 High (external vendor)                            | 🟡 Medium (the vendor evolves its API) |
 | Activity → inventory tables | Not cross-component: the tables belong to this service | 🟡 Medium (network)                                  | 🔴 High (core inventory rules change)  |
 
-Every external dependency is Contract coupling at high distance, which the [balance formula](coupling-dimensions.md#reading-the-analysis-tables) accepts. The Activity boundary keeps that knowledge in one place, and it is also where idempotency lives: each Activity above is safe to run twice, because Temporal will. The Workflow depends only on the Activity signature, so a Stripe API change or a schema migration is absorbed inside one Activity and never reaches the orchestration logic. Reading another service's tables from an Activity would be Intrusive coupling; the boundary does not change that, it only contains it.
+Every external dependency is Contract coupling at high distance, which the [balance formula](coupling-dimensions.md#reading-the-analysis-tables) accepts. The Activity boundary keeps that knowledge in one place, and it is also where idempotency lives: Temporal will run an Activity twice, so each one above is written to tolerate that, within the limits of its dependency (Stripe keeps an idempotency key for at least 24 hours; the database rows are permanent). The Workflow depends only on the Activity signature, so a Stripe API change or a schema migration is absorbed inside one Activity and never reaches the orchestration logic. Reading another service's tables from an Activity would be Intrusive coupling; the boundary does not change that, it only contains it.
 
 ### Signals, Queries, and Updates: The Message Boundary
 
@@ -580,6 +599,7 @@ class OrderSagaOrchestrator {
 // ✅ Temporal Workflow — compensation is co-located, retries are configuration
 import { proxyActivities, ApplicationFailure } from "@temporalio/workflow";
 import type { OrderActivities } from "./activities";
+import type { OrderRequest, OrderResult } from "./types";
 
 const activities = proxyActivities<OrderActivities>({
   startToCloseTimeout: "30s",
@@ -599,6 +619,7 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
     const paymentId = await activities.validatePayment(
       order.id,
       order.customerId,
+      order.paymentMethodId,
       order.total,
     );
     compensations.push(["refundPayment", () => activities.refundPayment(paymentId)]);

@@ -450,8 +450,11 @@ public class CustomerManagementService
 public record OrderSubmitted(
     string OrderId, string CustomerId, string ProductId, int Quantity,
     decimal Total, string State) : INotification;
-public record PaymentProcessed(string OrderId, string TransactionId) : INotification;
-public record InventoryReserved(string OrderId, string ProductId, int Quantity) : INotification;
+public record PaymentProcessed(
+    string OrderId, string CustomerId, string ProductId, int Quantity,
+    string TransactionId) : INotification;
+public record PaymentFailed(string OrderId, string Reason) : INotification;
+public record InventoryReserved(string OrderId, string CustomerId) : INotification;
 
 // Publisher: owns the order and the credit check, nothing else
 public class OrderService
@@ -493,6 +496,8 @@ public class TaxHandler : INotificationHandler<OrderSubmitted>
     }
 }
 
+// The events form a chain: nothing is reserved until payment succeeds, and
+// nothing ships or is announced until stock is reserved.
 public class PaymentHandler : INotificationHandler<OrderSubmitted>
 {
     private readonly IPaymentProcessor _payments;
@@ -500,19 +505,33 @@ public class PaymentHandler : INotificationHandler<OrderSubmitted>
     public async Task Handle(OrderSubmitted evt, CancellationToken ct)
     {
         var txn = await _payments.Charge(evt.CustomerId, evt.Total);
-        await _mediator.Publish(new PaymentProcessed(evt.OrderId, txn.Id), ct);
+        if (!txn.Success)
+        {
+            await _mediator.Publish(new PaymentFailed(evt.OrderId, txn.Reason), ct);
+            return;
+        }
+        await _mediator.Publish(new PaymentProcessed(
+            evt.OrderId, evt.CustomerId, evt.ProductId, evt.Quantity, txn.Id), ct);
     }
 }
 
-public class InventoryHandler : INotificationHandler<OrderSubmitted>
+public class OrderFailedHandler : INotificationHandler<PaymentFailed>
+{
+    private readonly IOrderRepository _orders;
+    public async Task Handle(PaymentFailed evt, CancellationToken ct)
+    {
+        await _orders.MarkFailed(evt.OrderId, evt.Reason);
+    }
+}
+
+public class InventoryHandler : INotificationHandler<PaymentProcessed>
 {
     private readonly IInventoryService _inventory;
     private readonly IMediator _mediator;
-    public async Task Handle(OrderSubmitted evt, CancellationToken ct)
+    public async Task Handle(PaymentProcessed evt, CancellationToken ct)
     {
         await _inventory.Reserve(evt.ProductId, evt.Quantity, evt.OrderId);
-        await _mediator.Publish(
-            new InventoryReserved(evt.OrderId, evt.ProductId, evt.Quantity), ct);
+        await _mediator.Publish(new InventoryReserved(evt.OrderId, evt.CustomerId), ct);
     }
 }
 
@@ -525,11 +544,11 @@ public class ShippingHandler : INotificationHandler<InventoryReserved>
     }
 }
 
-public class NotificationHandler : INotificationHandler<OrderSubmitted>
+public class NotificationHandler : INotificationHandler<InventoryReserved>
 {
     private readonly IEmailSender _email;
     private readonly INotificationHub _push;
-    public async Task Handle(OrderSubmitted evt, CancellationToken ct)
+    public async Task Handle(InventoryReserved evt, CancellationToken ct)
     {
         await _email.SendOrderConfirmation(evt.CustomerId, evt.OrderId);
         await _push.Send(evt.CustomerId, "Your order is confirmed!");
@@ -552,15 +571,16 @@ flowchart TD
 
     OS -->|"OrderSubmitted"| TH[TaxHandler<br/>Ce=1]
     OS -->|"OrderSubmitted"| PH[PaymentHandler<br/>Ce=2]
-    OS -->|"OrderSubmitted"| IH[InventoryHandler<br/>Ce=2]
-    OS -->|"OrderSubmitted"| NH[NotificationHandler<br/>Ce=2]
     OS -->|"OrderSubmitted"| AH[AnalyticsHandler<br/>Ce=1]
+    PH -->|"PaymentProcessed"| IH[InventoryHandler<br/>Ce=2]
+    PH -->|"PaymentFailed"| OFH[OrderFailedHandler<br/>Ce=1]
     IH -->|"InventoryReserved"| SH[ShippingHandler<br/>Ce=1]
+    IH -->|"InventoryReserved"| NH[NotificationHandler<br/>Ce=2]
 
     style OS fill:#4dabf7,color:#fff
 ```
 
-The god service's Ce of 8 is now spread across seven classes, none above 3. The arrows are event subscriptions, not references: `OrderService` depends on `IMediator` and the event type, never on the handlers. In coupling terms the handlers are Contract-coupled to the event shape at low distance (same process). The balance formula calls low strength at low distance "low cohesion"; that is a fair warning here. If the handlers never move to separate deployables, the events are indirection you pay for in traceability, and a direct call from a smaller `OrderService` would do.
+The god service's Ce of 8 is now spread across eight classes, none above 3. The ordering the god service enforced with sequential statements (pay, then reserve, then ship) is now enforced by which event each handler subscribes to. The arrows are event subscriptions, not references: `OrderService` depends on `IMediator` and the event type, never on the handlers. In coupling terms the handlers are Contract-coupled to the event shape at low distance (same process). The balance formula calls low strength at low distance "low cohesion"; that is a fair warning here. If the handlers never move to separate deployables, the events are indirection you pay for in traceability, and a direct call from a smaller `OrderService` would do.
 
 ---
 
@@ -1200,7 +1220,7 @@ export interface PaymentResult {
 }
 
 export interface PaymentGateway {
-  charge(customerId: string, amount: number): Promise<PaymentResult>;
+  charge(customerId: string, paymentMethodId: string, amount: number): Promise<PaymentResult>;
 }
 
 export interface EventPublisher {
@@ -1233,7 +1253,7 @@ export class CreateOrderHandler implements CreateOrderUseCase {
   async execute(cmd: CreateOrderCommand): Promise<string> {
     const order = Order.create(cmd.customerId, cmd.items);
 
-    const payment = await this.payments.charge(cmd.customerId, order.total);
+    const payment = await this.payments.charge(cmd.customerId, cmd.paymentMethodId, order.total);
     if (!payment.success) throw new PaymentFailedError(payment.reason);
 
     order.confirm();
@@ -1263,15 +1283,26 @@ export class PostgresOrderRepository implements OrderRepository {
   constructor(private pool: Pool) {}
 
   async save(order: Order): Promise<void> {
-    await this.pool.query(
-      "INSERT INTO orders (id, customer_id, total, status) VALUES ($1, $2, $3, $4)",
-      [order.id, order.customerId, order.total, order.status],
-    );
-    for (const item of order.items) {
-      await this.pool.query(
-        "INSERT INTO order_items (order_id, product_id, price, quantity) VALUES ($1, $2, $3, $4)",
-        [order.id, item.productId, item.price, item.quantity],
+    // The aggregate is one unit; its rows are written in one transaction
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "INSERT INTO orders (id, customer_id, total, status) VALUES ($1, $2, $3, $4)",
+        [order.id, order.customerId, order.total, order.status],
       );
+      for (const item of order.items) {
+        await client.query(
+          "INSERT INTO order_items (order_id, product_id, price, quantity) VALUES ($1, $2, $3, $4)",
+          [order.id, item.productId, item.price, item.quantity],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
   }
 
@@ -1305,14 +1336,20 @@ import { PaymentGateway, PaymentResult } from "../domain/ports/outbound";
 export class StripePaymentGateway implements PaymentGateway {
   constructor(private stripe: Stripe) {}
 
-  async charge(customerId: string, amount: number): Promise<PaymentResult> {
+  async charge(
+    customerId: string,
+    paymentMethodId: string,
+    amount: number,
+  ): Promise<PaymentResult> {
     // Stripe-specific implementation hidden here. Without confirm the intent
-    // stays in requires_payment_method; confirm + off_session charges the
-    // customer's saved payment method in one call.
+    // stays in requires_payment_method. confirm + off_session with an explicit
+    // saved PaymentMethod charges it in one call; omitting payment_method
+    // falls back to the legacy customer.default_source.
     const intent = await this.stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency: "usd",
       customer: customerId,
+      payment_method: paymentMethodId,
       confirm: true,
       off_session: true,
     });
@@ -1391,7 +1428,7 @@ public record PaymentResult(bool Success, string? TransactionId, string? Reason 
 
 public interface IPaymentGateway
 {
-    Task<PaymentResult> Charge(string customerId, decimal amount);
+    Task<PaymentResult> Charge(string customerId, string paymentMethodId, decimal amount);
 }
 
 public interface IEventPublisher
@@ -1422,7 +1459,7 @@ public class CreateOrderHandler
     {
         var order = Order.Create(cmd.CustomerId, cmd.Items);
 
-        var payment = await _payments.Charge(cmd.CustomerId, order.Total);
+        var payment = await _payments.Charge(cmd.CustomerId, cmd.PaymentMethodId, order.Total);
         if (!payment.Success) throw new PaymentFailedException(payment.Reason);
 
         order.Confirm();
@@ -1459,7 +1496,7 @@ namespace Infrastructure.Payments;
 
 public class StripeGateway : IPaymentGateway
 {
-    public async Task<PaymentResult> Charge(string customerId, decimal amount)
+    public async Task<PaymentResult> Charge(string customerId, string paymentMethodId, decimal amount)
     {
         // Stripe-specific code hidden behind the port
         var service = new PaymentIntentService();
@@ -1468,7 +1505,8 @@ public class StripeGateway : IPaymentGateway
             Amount = (long)(amount * 100),
             Currency = "usd",
             Customer = customerId,
-            Confirm = true,       // otherwise the intent waits for a payment method
+            PaymentMethod = paymentMethodId, // the saved method to charge
+            Confirm = true,                  // otherwise the intent waits for confirmation
             OffSession = true,
         });
         return new PaymentResult(
@@ -1539,7 +1577,7 @@ public interface OrderRepository {
 public record PaymentResult(boolean success, String transactionId, String reason) {}
 
 public interface PaymentGateway {
-    PaymentResult charge(String customerId, BigDecimal amount);
+    PaymentResult charge(String customerId, String paymentMethodId, BigDecimal amount);
 }
 
 public interface EventPublisher {
@@ -1566,7 +1604,7 @@ public class CreateOrderHandler {
     public String handle(CreateOrderCommand cmd) {
         var order = Order.create(cmd.customerId(), cmd.items());
 
-        var payment = payments.charge(cmd.customerId(), order.getTotal());
+        var payment = payments.charge(cmd.customerId(), cmd.paymentMethodId(), order.getTotal());
         if (!payment.success()) throw new PaymentFailedException(payment.reason());
 
         order.confirm();
@@ -1605,13 +1643,14 @@ public class JpaOrderRepository implements OrderRepository {
 public class StripePaymentGateway implements PaymentGateway {
 
     @Override
-    public PaymentResult charge(String customerId, BigDecimal amount) {
+    public PaymentResult charge(String customerId, String paymentMethodId, BigDecimal amount) {
         // ✅ Builder pattern → connascence of name (not position)
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
             .setAmount(amount.multiply(new BigDecimal(100)).longValue())
             .setCurrency("usd")
             .setCustomer(customerId)
-            .setConfirm(true)       // otherwise the intent waits for a payment method
+            .setPaymentMethod(paymentMethodId) // the saved method to charge
+            .setConfirm(true)                  // otherwise the intent waits for confirmation
             .setOffSession(true)
             .build();
 
