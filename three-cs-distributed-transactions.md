@@ -23,7 +23,7 @@ Each C is a binary choice, so there are $2^3 = 8$ saga topologies, each with its
 - [The Eight Saga Species](#the-eight-saga-species)
 - [ELI5: Saga Species](#eli5-saga-species)
 - [Practical Recommendations](#practical-recommendations)
-- [Where Temporal Sits in the Three C's](#where-temporal-sits-in-the-three-cs)
+- [Where Temporal Sits in the Three C's](durable-execution-orchestration.md#where-temporal-sits-in-the-three-cs) (in the durable execution guide)
 
 ---
 

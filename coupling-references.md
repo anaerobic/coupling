@@ -175,7 +175,7 @@ Check the [coupling.dev podcasts page](https://coupling.dev/posts/learning-resou
 | **Bounded Context**                      | A DDD concept — a boundary within which a domain model is consistent                                   |
 | **Anti-Corruption Layer (ACL)**          | A translation layer that prevents one model from leaking into another                                  |
 | **Dependency Inversion Principle (DIP)** | High-level modules should not depend on low-level modules; both should depend on abstractions          |
-| **Distributed Monolith**                 | A system with separately deployed services that are tightly coupled (worst of both worlds)             |
+| **Distributed Monolith**                 | Separately deployed services with high integration strength: the coordination cost of distance without the independence |
 | **Temporal Coupling**                    | Components must be available at the same time for an interaction to succeed (a synchronous call)       |
 | **Lifecycle Coupling**                   | Components must be built, tested, and deployed together; falls as distance rises                       |
 | **Runtime Coupling**                     | Any dependency between components while the system runs (availability, ordering, latency); an input to distance |
