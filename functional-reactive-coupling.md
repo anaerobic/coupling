@@ -6,7 +6,9 @@
 > _in time instead of space, we can discard plumbing and focus on the important things."_
 > — Caolan McMahon, Highland.js
 
-Functional Reactive Programming (FRP) and its adjacent paradigms — reactive streams, the actor model, and statecharts — offer powerful primitives for managing coupling. This guide examines how **Observables**, **Actors**, and **Streams** interact with the three coupling dimensions and where they help (or hurt) modularity.
+Reactive streams, the actor model, and statecharts give you primitives for managing coupling. This guide examines how **Observables**, **Actors**, and **Streams** interact with the three coupling dimensions and where they help (or hurt) modularity.
+
+A note on the title. Strictly, Functional Reactive Programming is [Conal Elliott's](https://github.com/conal/essence-and-origins-of-frp) continuous-time model. RxJS, Akka Streams, and Highland are reactive streams over discrete events. This guide uses "FRP" loosely for the whole family, the way the industry does.
 
 ---
 
@@ -16,7 +18,7 @@ Functional Reactive Programming (FRP) and its adjacent paradigms — reactive st
 - [Reactive Streams and Observables](#reactive-streams-and-observables)
   - [The Observable as a Coupling Boundary](#the-observable-as-a-coupling-boundary)
   - [Integration Strength in Reactive Pipelines](#integration-strength-in-reactive-pipelines)
-  - [Akka.NET: Actor Streams, CEP, and Clustering](#c-akkanet--actor-streams-with-clustering-and-cep)
+  - [Akka.NET: Actor Streams and Clustering](#c-akkanet--actor-streams-with-clustering)
   - [Back-Pressure and Temporal Coupling](#back-pressure-and-temporal-coupling)
 - [The Actor Model](#the-actor-model)
   - [Actors as Encapsulation Boundaries](#actors-as-encapsulation-boundaries)
@@ -45,7 +47,7 @@ mindmap
   root((FRP & Coupling))
     Reactive Streams
       Observables (RxJS/RxJava)
-      Back-pressure
+      Back-pressure (Flowable, Reactor, Akka Streams)
       Operators as contracts
     Actor Model
       Encapsulated state
@@ -74,9 +76,9 @@ mindmap
 
 | Dimension                | Imperative Default                                                    | Reactive Improvement                                               | How                                                    |
 | ------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
-| **Integration Strength** | 🟠 Functional/Model — callers know method signatures and domain types | 🔵 Contract — subscribers know only the event shape                | Observable/event contracts replace direct method calls |
-| **Distance**             | 🟢 Low — method calls within a process                                | 🟡 Flexible — same operator chains work locally or across services | Streams abstract over sync/async and location          |
-| **Volatility**           | 🔴 Changes in producers cascade to all callers                        | 🟢 Contract acts as buffer — producer internals can change freely  | Only the emitted event shape matters                   |
+| **Integration Strength** | 🟢 Model — callers pass domain types through method signatures        | 🔵 Contract — subscribers know only the event shape                | Event contracts replace domain types on the boundary   |
+| **Distance**             | 🟢 Low — method calls within a process                                | 🟢 Low, unchanged; the same operator chains also run across services | Distance is where you deploy the stages, not the library |
+| **Volatility**           | 🔴 A producer change cascades to every caller                         | 🔴 Same producer, same rate of change; the cascade stops at the event shape | Contracts contain the cascade; they do not lower volatility |
 
 ---
 
@@ -84,7 +86,7 @@ mindmap
 
 ### The Observable as a Coupling Boundary
 
-An **Observable** (from [ReactiveX](https://reactivex.io/intro.html)) is the reactive counterpart to an Iterable. Where an Iterable lets consumers _pull_ values, an Observable lets producers _push_ values. This inversion has profound coupling implications:
+An **Observable** (from [ReactiveX](https://reactivex.io/intro.html)) is the reactive counterpart to an Iterable. Where an Iterable lets consumers _pull_ values, an Observable lets producers _push_ values. The inversion changes who knows what:
 
 ```mermaid
 flowchart LR
@@ -105,15 +107,15 @@ flowchart LR
     push ---|"Subscribers know<br/>only the event type"| Loose["🟢 Lower Strength"]
 ```
 
-The Observable provides three signals — and _only_ three:
+The Observable provides exactly three signals:
 
 | Signal           | Purpose           | Coupling Implication                                       |
 | ---------------- | ----------------- | ---------------------------------------------------------- |
 | `onNext(value)`  | Emit a value      | The **only** shared knowledge is the value type            |
-| `onError(error)` | Signal failure    | Standardized error propagation — no custom error protocols |
+| `onError(error)` | Signal failure    | Standardized error propagation; no custom error protocols  |
 | `onComplete()`   | Signal completion | Producers control their own lifecycle                      |
 
-This maps directly to **contract coupling** — subscribers need no knowledge of _how_ values are produced, only _what shape_ they take.
+This is **contract coupling**: subscribers need no knowledge of _how_ values are produced, only _what shape_ they take.
 
 ### ELI5: Observables
 
@@ -125,11 +127,11 @@ This maps directly to **contract coupling** — subscribers need no knowledge of
 
 Reactive operators compose into pipelines that keep coupling low by processing data through _contracts_ rather than _shared logic_.
 
-#### TypeScript (RxJS) — Before: Imperative with functional coupling
+#### TypeScript (RxJS) — Before: Imperative with model coupling
 
 ```typescript
 // ❌ OrderProcessor directly calls PricingService and InventoryService
-// Both caller and callee must know each other's interfaces and domain models
+// and passes their domain types around
 
 class OrderProcessor {
   constructor(
@@ -139,20 +141,20 @@ class OrderProcessor {
   ) {}
 
   async processOrder(order: Order): Promise<ProcessedOrder> {
-    // Functional coupling — we know PricingService's business rule API
+    // Model coupling: the call takes and returns pricing's domain types
     const price = await this.pricing.calculateDynamicPrice(
       order.productId,
       order.quantity,
       order.customerSegment,
     );
 
-    // Model coupling — we know InventoryService's domain model
+    // Model coupling: we read InventoryService's Stock model
     const stock = await this.inventory.getStock(order.productId);
     if (stock.available < order.quantity) {
       throw new Error("Insufficient stock");
     }
 
-    // Must know NotificationService's implementation
+    // Contract coupling: a method signature with primitives
     await this.notifications.sendOrderConfirmation(order.customerId, price);
 
     return { ...order, finalPrice: price, status: "confirmed" };
@@ -163,10 +165,10 @@ class OrderProcessor {
 **Coupling Analysis:**
 | Dimension | Value | Why |
 |---|---|---|
-| Integration Strength | 🟠 Functional | Knows business rules of pricing, inventory, and notifications |
+| Integration Strength | 🟢 Model | Passes and receives domain types from pricing and inventory |
 | Distance | 🟢 Low | All within one process |
 | Volatility | 🔴 High | Pricing rules change weekly |
-| **Verdict** | ⚠️ | Tight functional coupling to volatile pricing logic |
+| **Verdict** | ⚠️ | Model at low distance is cohesion by the formula. The problem is what this class binds together: three subdomains in one unit, so a pricing change touches order processing |
 
 #### TypeScript (RxJS) — After: Reactive pipeline with contract coupling
 
@@ -185,6 +187,8 @@ interface OrderSubmitted {
 interface OrderPriced {
   type: "OrderPriced";
   orderId: string;
+  productId: string;
+  quantity: number;
   finalPrice: number;
 }
 
@@ -206,6 +210,8 @@ const pricedOrders$ = orderEvents$.pipe(
       map((price) => ({
         type: "OrderPriced" as const,
         orderId: event.orderId,
+        productId: event.productId,
+        quantity: event.quantity,
         finalPrice: price,
       })),
       catchError((err) => {
@@ -217,9 +223,10 @@ const pricedOrders$ = orderEvents$.pipe(
 );
 
 // ✅ Confirmation pipeline — subscribes to OrderPriced, emits OrderConfirmed
+// reserveStock enforces the stock check the imperative version did inline
 const confirmedOrders$ = pricedOrders$.pipe(
   mergeMap((event) =>
-    from(reserveStock(event.orderId)).pipe(
+    from(reserveStock(event.orderId, event.productId, event.quantity)).pipe(
       map(() => ({
         type: "OrderConfirmed" as const,
         orderId: event.orderId,
@@ -241,9 +248,9 @@ confirmedOrders$
 | Dimension | Value | Why |
 |---|---|---|
 | Integration Strength | 🔵 Contract | Each pipeline stage knows only the event types |
-| Distance | 🟢 Low | Same process, but easily distributable |
-| Volatility | 🟢 Buffered | Pricing internals can change without touching the pipeline |
-| **Verdict** | ✅ | Contract coupling with clear data flow |
+| Distance | 🟢 Low | Same process today; the event shapes are already the contracts you would need to split it |
+| Volatility | 🔴 High | Pricing still changes weekly; the event shape stops the cascade at the pricing stage |
+| **Verdict** | ⚠️ | Contract at low distance is the formula's low-cohesion cell. Worth it when these stages are headed for separate deployables. If they stay in one process, async/await is simpler and the events are indirection |
 
 #### C# (System.Reactive) — Observable pipeline
 
@@ -287,9 +294,9 @@ public class OrderPipeline
 }
 ```
 
-#### C# (Akka.NET) — Actor Streams with Clustering and CEP
+#### C# (Akka.NET) — Actor Streams with Clustering
 
-[Akka.NET](https://getakka.net/) goes beyond simple Observables: it layers **Reactive Streams** (the `Source` → `Flow` → `Sink` pipeline) on top of a full **actor system** with clustering, remoting, persistence, and complex event processing (CEP). Where `System.Reactive` gives you in-process stream composition, Akka.NET gives you **location-transparent streams that span machines** — while preserving the same coupling properties.
+[Akka.NET](https://getakka.net/) layers **Reactive Streams** (the `Source` → `Flow` → `Sink` pipeline) on top of a full **actor system** with clustering, remoting, and persistence. Where `System.Reactive` gives you in-process stream composition, Akka.NET gives you **location-transparent streams that span machines** with the same coupling properties.
 
 ```mermaid
 flowchart TD
@@ -317,11 +324,11 @@ flowchart TD
 | ------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | **Integration Strength** | 🔵 Contract — `IObservable<T>` event types | 🔵 Contract — `Source<T>`, `Flow<TIn, TOut>`, message types                                     | Both share only event/message shapes                            |
 | **Distance**             | 🟢 Low — single process only               | 🟢→🔴 Flexible — same pipeline runs locally or across cluster nodes via StreamRefs              | Akka.Remote + Akka.Cluster make distance transparent            |
-| **Volatility**           | 🟢 Buffered — producer internals hidden    | 🟢 Buffered + resilient — actor supervision, persistence, and cluster sharding survive failures | Actor restart strategies shield consumers from producer crashes |
+| **Failure isolation**    | `Catch` and `Retry` per stream             | Actor supervision, persistence, and cluster sharding survive crashes                            | Restart strategies shield consumers from producer crashes       |
 
-##### Reactive Tweets: Stateful Stream Processing (CEP)
+##### Reactive Tweets: Fan-Out with Broadcast
 
-The [Reactive Tweets](https://getakka.net/articles/streams/reactivetweets.html) example demonstrates Akka.Streams' graph-based approach to complex event processing — splitting a live data stream into multiple processing branches using `Broadcast`, then routing each branch through independent transformations.
+The [Reactive Tweets](https://getakka.net/articles/streams/reactivetweets.html) example shows Akka.Streams' graph approach: split a live stream into branches with `Broadcast`, then route each branch through its own transformation.
 
 ```csharp
 using Akka.Actor;
@@ -412,7 +419,7 @@ publisher.Subscribe(alertSubscriber);    // subscriber 2 — no code changes to 
 
 ##### Clustering and Remoting: Same Contract, Any Distance
 
-Akka.NET's true differentiator is that actors — and their streams — can be distributed across nodes with **no change to the coupling contract**. Messages between actors use the same types whether the actor is in-process or on a remote machine.
+Akka.NET's differentiator is that actors, and their streams, can be distributed across nodes with **no change to the coupling contract**. Messages between actors use the same types whether the actor is in-process or on a remote machine.
 
 ```csharp
 // ✅ Shared message contract — lives in a common assembly
@@ -437,6 +444,7 @@ public class OrderActor : ReceiveActor
 public class ClusterListener : UntypedActor
 {
     private readonly Cluster _cluster = Cluster.Get(Context.System);
+    private readonly ILoggingAdapter _log = Context.GetLogger();
 
     protected override void PreStart()
     {
@@ -452,13 +460,13 @@ public class ClusterListener : UntypedActor
         switch (message)
         {
             case ClusterEvent.MemberUp up:
-                Log.Info("Node joined: {0}", up.Member);
+                _log.Info("Node joined: {0}", up.Member);
                 break;
             case ClusterEvent.UnreachableMember unreachable:
-                Log.Info("Node unreachable: {0}", unreachable.Member);
+                _log.Info("Node unreachable: {0}", unreachable.Member);
                 break;
             case ClusterEvent.MemberRemoved removed:
-                Log.Info("Node removed: {0}", removed.Member);
+                _log.Info("Node removed: {0}", removed.Member);
                 break;
         }
     }
@@ -518,13 +526,16 @@ flowchart LR
 | **Failure isolation**  | `Catch`, `Retry` operators on individual streams     | Actor supervision hierarchies — "let it crash" philosophy               |
 | **Distance**           | Single process                                       | Transparent remoting, cluster sharding, StreamRefs across nodes         |
 | **Learning curve**     | Low — LINQ-like operators                            | Higher — actor model + streams + clustering concepts                    |
-| **Best for**           | UI event composition, in-process data pipelines      | Distributed workflows, CEP, IoT ingestion, multi-node stateful services |
+| **Best for**           | UI event composition, in-process data pipelines      | Distributed workflows, IoT ingestion, multi-node stateful services      |
 
 #### Java (RxJava) — Observable pipeline
 
 ```java
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.subjects.PublishSubject;
+
+// Observable has no back-pressure. If producers can outrun consumers,
+// use Flowable, which implements the Reactive Streams demand protocol.
 
 // ✅ Contract events — the ONLY shared knowledge
 public record OrderSubmitted(String orderId, String productId, int quantity) {}
@@ -562,7 +573,9 @@ public class OrderPipeline {
 
 ### Back-Pressure and Temporal Coupling
 
-**Temporal coupling** occurs when components must be available _at the same time_ to function. Synchronous HTTP calls are temporally coupled — if the server is down, the client fails. Reactive streams offer built-in strategies to manage this.
+[**Temporal coupling**](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling) occurs when components must be available _at the same time_ to function. A synchronous HTTP call is temporally coupled: if the server is down, the client fails.
+
+Back-pressure is a different thing. It regulates the _rate_ between a live producer and a live consumer; both still have to be running. Only a durable buffer between them (a queue, a log) removes temporal coupling. The diagram below shows both.
 
 ```mermaid
 flowchart TD
@@ -582,7 +595,7 @@ flowchart TD
     style BP fill:#69db7c,color:#333
 ```
 
-#### Back-Pressure Strategies
+#### Flow-Control Strategies
 
 | Strategy   | How It Works                                | When to Use                                     | Library Support                       |
 | ---------- | ------------------------------------------- | ----------------------------------------------- | ------------------------------------- |
@@ -591,10 +604,19 @@ flowchart TD
 | **Error**  | Signal overflow as an error                 | Bounded systems where data loss is unacceptable | Reactor `onBackpressureError`         |
 | **Latest** | Keep only the most recent unprocessed value | UI updates, sensor readings                     | RxJS `audit`, Highland `latest`       |
 
-#### TypeScript — Back-pressure with RxJS
+RxJS Observables have no demand signal: these operators drop, batch, or delay on the producer's schedule. Demand-based back-pressure, where the consumer tells the producer how much it can take, needs a Reactive Streams implementation: RxJava `Flowable`, Reactor `Flux`, or Akka Streams. Highland's lazy pull model gets the same effect for a single consumer.
+
+#### TypeScript — Flow control with RxJS
 
 ```typescript
-import { fromEvent, throttleTime, debounceTime, bufferCount, map } from "rxjs";
+import {
+  fromEvent,
+  throttleTime,
+  debounceTime,
+  distinctUntilChanged,
+  bufferCount,
+  map,
+} from "rxjs";
 
 // ✅ UI search box — debounce prevents overwhelming the API
 const searchInput = document.getElementById("search") as HTMLInputElement;
@@ -625,7 +647,7 @@ sensorReadings$.subscribe((aggregated) => sendToAnalytics(aggregated));
 
 The [Actor Model](https://stately.ai/docs/actor-model) is a mathematical model of concurrent computation where **actors** are the fundamental unit. Each actor:
 
-1. Has **private, encapsulated state** — no shared state whatsoever
+1. Has **private, encapsulated state**, with no shared state
 2. Communicates **only through asynchronous messages** (events)
 3. Processes **one message at a time** (mailbox/queue)
 4. Can **create (spawn) new actors**
@@ -658,7 +680,7 @@ flowchart TD
 | ------------------------ | -------------------------------------------------------------------------------------------------- |
 | **Integration Strength** | 🔵 Contract — actors share only message shapes, never internal state                               |
 | **Distance**             | 🟡 Location-transparent — same machine or different, the message protocol is identical             |
-| **Volatility**           | 🟢 Buffered — actor internals (state shape, transition logic) can change without affecting senders |
+| **Volatility**           | Unchanged. Senders share only message shapes, so an actor's internal changes stop at its mailbox   |
 
 ### ELI5: The Actor Model
 
@@ -670,19 +692,17 @@ flowchart TD
 
 ### XState: Statecharts as Coupling Contracts
 
-[XState](https://stately.ai/docs/xstate) implements the actor model using statecharts. A statechart explicitly defines which messages an actor accepts in each state — making the **coupling contract visual and verifiable**.
+[XState](https://stately.ai/docs/xstate) implements the actor model using statecharts. A statechart explicitly defines which messages an actor accepts in each state, which makes the **coupling contract visual and verifiable**.
 
 #### TypeScript (XState) — Order processing actor
 
 ```typescript
-import { setup, assign, fromPromise, sendTo } from "xstate";
+import { setup, assign, fromPromise } from "xstate";
 
-// ✅ Events define the actor's CONTRACT — the only shared knowledge
+// ✅ Events define the actor's CONTRACT — the only shared knowledge.
+// Pricing and stock results arrive through invoked actors, not events.
 type OrderEvent =
   | { type: "SUBMIT"; productId: string; quantity: number; customerId: string }
-  | { type: "PRICE_RECEIVED"; price: number }
-  | { type: "STOCK_CONFIRMED" }
-  | { type: "STOCK_FAILED"; reason: string }
   | { type: "PAYMENT_SUCCESS"; transactionId: string }
   | { type: "PAYMENT_FAILED"; reason: string };
 
@@ -713,6 +733,7 @@ const orderMachine = setup({
       async ({ input }: { input: { productId: string; quantity: number } }) => {
         const res = await fetch(`/api/inventory/check`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(input),
         });
         return res.json();
@@ -842,9 +863,9 @@ flowchart TD
 
 - In the same process (low distance, low change cost)
 - In separate containers (high distance, same contract)
-- Across systems via Akka Cluster, Erlang distribution, or Stately Sky (highest distance, still same contract)
+- Across systems via Akka Cluster or Erlang distribution (highest distance, still same contract)
 
-This is the actor model's killer feature for coupling: **integration strength stays at contract level regardless of distance**.
+This is the actor model's main contribution to coupling: **integration strength stays at contract level regardless of distance**.
 
 ---
 
@@ -852,7 +873,7 @@ This is the actor model's killer feature for coupling: **integration strength st
 
 ### Highland: Synchronous Meets Asynchronous
 
-[Highland.js](https://caolan.github.io/highland/) takes a different approach from RxJS: rather than building new primitives, it extends familiar Array operations to work seamlessly with asynchronous data. This matters for coupling because it removes the **paradigm boundary** between synchronous and asynchronous code.
+[Highland.js](https://caolan.github.io/highland/) takes a different approach from RxJS: rather than building new primitives, it extends familiar Array operations to asynchronous data. This matters for coupling because it removes the **paradigm boundary** between synchronous and asynchronous code.
 
 ```mermaid
 flowchart LR
@@ -866,7 +887,7 @@ flowchart LR
         Both["Highland Streams<br/>map, filter, reduce<br/>for BOTH sync and async"]
     end
 
-    imperative -->|"Coupling to<br/>data timing"| TC["🔴 Temporal Coupling<br/>to implementation"]
+    imperative -->|"Coupling to<br/>data timing"| TC["🔴 Paradigm coupling:<br/>sync and async code diverge"]
     highland -->|"Decoupled from<br/>data timing"| LC["🟢 Same code,<br/>sync or async"]
 
     style TC fill:#ff6b6b,color:#fff
@@ -904,12 +925,12 @@ testOrders.toArray((results) => console.log(results));
 const dbStream = _(db.collection("orders").find().stream());
 processOrders(dbStream)
   .batch(100)
-  .map((batch) => saveToWarehouse(batch))
+  .map((batch) => _(saveToWarehouse(batch))) // wrap the promise: parallel() takes a stream of streams
   .parallel(4)
   .done(() => console.log("Processing complete"));
 ```
 
-**Coupling implication:** The `processOrders` pipeline has **zero coupling to how data arrives**. Swapping from REST API to database stream to file reader requires no changes to the processing logic. This is contract coupling at its purest — the contract is the _shape of each item in the stream_.
+The `processOrders` pipeline has **no coupling to how data arrives**. Swapping from REST API to database stream to file reader requires no changes to the processing logic. The contract is the _shape of each item in the stream_.
 
 ### Composable Pipelines and Cohesion
 
@@ -959,12 +980,12 @@ _(orderSource)
 
 ### aws-lambda-stream: Hexagonal Architecture for Serverless Event Systems
 
-Highland's composable pipeline model is the theoretical foundation. [aws-lambda-stream](https://github.com/jgilbert01/aws-lambda-stream) is where that foundation meets production-scale serverless event-driven architecture. Built _on top of_ Highland.js, it creates stream processors for AWS Lambda functions that implement **event sourcing**, **CQRS**, and **Complex Event Processing (CEP)** — all while keeping coupling at the contract level.
+Highland's composable pipeline model is the foundation. [aws-lambda-stream](https://github.com/jgilbert01/aws-lambda-stream) builds on it to create stream processors for AWS Lambda functions that implement **event sourcing**, **CQRS**, and **complex event processing** (its README's terms), with coupling kept at the contract level.
 
 > _"Look on every exit as being an entrance somewhere else."_
 > — Tom Stoppard, _Rosencrantz and Guildenstern Are Dead_ (quoted in the aws-lambda-stream architecture)
 
-**ELI5 analogy:** If Highland.js is a conveyor-belt toolkit (motors, rollers, sensors), then aws-lambda-stream is a _factory floor plan_ that tells you how to wire those conveyor belts into a working fulfillment center — with standardized bins (UnitOfWork), labeled chutes (connectors), quality control stations (fault handling), and a floor supervisor who knows how to reroute around jams (back-pressure).
+**ELI5 analogy:** If Highland.js is a conveyor-belt toolkit (motors, rollers, sensors), then aws-lambda-stream is a _factory floor plan_ that tells you how to wire those conveyor belts into a working fulfillment center, with standardized bins (UnitOfWork), labeled chutes (connectors), quality control stations (fault handling), and a floor supervisor who reroutes around jams (back-pressure).
 
 ```mermaid
 flowchart LR
@@ -1002,7 +1023,7 @@ flowchart LR
 
 #### The UnitOfWork Pipeline Model
 
-The core abstraction is the **UnitOfWork (uow)** — an immutable, scoped variables object that flows through every pipeline stage. Think of it as a "context envelope" that carries an event plus any enrichment data accumulated along the way, without any stage needing to know about the others.
+The core abstraction is the **UnitOfWork (uow)**, an immutable, scoped variables object that flows through every pipeline stage. Think of it as a "context envelope" that carries an event plus any enrichment data accumulated along the way, without any stage needing to know about the others.
 
 ```typescript
 // aws-lambda-stream event structure (the contract)
@@ -1012,7 +1033,7 @@ interface Event {
   timestamp: number; // epoch milliseconds
   partitionKey: string; // routing key for ordering
   tags: Record<string, string | number>;
-  thing: object; // canonical entity shape
+  thing?: object; // the entity, named per type: "thing", "order", ...
   raw?: object; // original wire format (hidden from pipelines)
 }
 
@@ -1025,13 +1046,12 @@ interface UnitOfWork {
 }
 ```
 
-**Coupling insight:** Every pipeline stage receives and returns a `UnitOfWork`. No stage knows _which_ stage came before or after. This is the Highland `pipeline` pattern elevated to an architectural principle — pure **contract coupling** through the UnitOfWork shape.
+Every pipeline stage receives and returns a `UnitOfWork`. No stage knows _which_ stage came before or after. It is the Highland `pipeline` pattern applied to a whole architecture: **contract coupling** through the UnitOfWork shape.
 
 ```typescript
-import { fromKinesis, toPromise, update } from "aws-lambda-stream";
-import _ from "highland";
+import { initialize, fromKinesis, toPromise } from "aws-lambda-stream";
 
-// ✅ A trigger function: DynamoDB Streams → domain events → EventBridge
+// ✅ A listener function: Kinesis → domain events → EventBridge and S3
 const PIPELINES = {
   // Each pipeline is a curried function: (options) => (stream) => stream
   cdc: (options) => (s) =>
@@ -1053,64 +1073,65 @@ const PIPELINES = {
       .through(putObjectToS3(options)),
 };
 
-// Handler — the nano-level adapter
+// Handler — the nano-level adapter (shape from the library README)
 export const handler = async (event) =>
-  toPromise(
-    fromKinesis(event)
-      .through(deserialize)
-      .through(assemblePipelines(PIPELINES, options)),
-  );
+  initialize(PIPELINES, OPTIONS)
+    .assemble(fromKinesis(event))
+    .through(toPromise);
 ```
 
-**What's happening here:** A single Lambda function processes a Kinesis stream. The incoming records are deserialized into UnitOfWork objects, then **forked** into independent pipelines (CDC publishing, audit logging). Each pipeline is a self-contained Highland stream transform. They share _no state_ — only the UnitOfWork contract.
+**What's happening here:** A single Lambda function processes a Kinesis stream. `fromKinesis` turns the records into UnitOfWork objects, `assemble` **forks** them into the independent pipelines (event publishing, audit logging), and `toPromise` starts the pull. Each pipeline is a self-contained Highland stream transform. They share _no state_, only the UnitOfWork contract.
 
 #### Flavors: Reusable Pipeline Templates
 
-The library provides **flavors** — pre-built pipeline templates for common event-driven patterns. Each flavor is a higher-order function that accepts a **rules** object to configure its behavior, producing a complete pipeline. This is the factory method pattern applied to stream processing.
+The library provides **flavors**: pre-built pipeline templates for common event-driven patterns. Each flavor is a higher-order function that takes a **rule** object and produces a complete pipeline. `id`, `flavor`, and `eventType` are required on every rule; the rest is defined by the flavor.
 
 ```typescript
-import { materialize, cdc, correlate, evaluate } from "aws-lambda-stream";
+import { initializeFrom, materialize, cdc, correlate, evaluate } from "aws-lambda-stream";
 
 // ✅ Flavors turn rules into pipelines — no custom stream code needed
 const RULES = [
   {
     id: "materialize-orders",
-    flavor: materialize, // listens for events → writes to DynamoDB
-    eventType: "order-submitted",
+    flavor: materialize, // listener: events → DynamoDB single table
+    eventType: "order-submitted", // string, regex, or array of strings
     toUpdateRequest: (uow) => ({
       // map event → DynamoDB update params
-      Key: { pk: uow.event.thing.orderId },
+      Key: { pk: uow.event.order.orderId },
       ExpressionAttributeValues: {
-        ":status": uow.event.thing.status,
-        ":total": uow.event.thing.total,
+        ":status": uow.event.order.status,
+        ":total": uow.event.order.total,
       },
       UpdateExpression: "SET #status = :status, #total = :total",
     }),
   },
   {
     id: "cdc-order-approved",
-    flavor: cdc, // DynamoDB Streams → domain events
-    eventType: /order-.*/, // regex matching
+    flavor: cdc, // trigger: DynamoDB Streams → domain events
+    eventType: /order-.*/,
     toEvent: (uow) => ({
-      type: `order-${uow.event.thing.status}`,
-      thing: pickPublicFields(uow.event.thing),
+      type: `order-${uow.event.order.status}`,
+      order: pickPublicFields(uow.event.order),
     }),
   },
   {
     id: "correlate-payment",
-    flavor: correlate, // join events across time windows
+    flavor: correlate, // trigger: group related events for later evaluation
     eventType: ["order-submitted", "payment-received"],
-    correlationKey: (uow) => uow.event.thing.orderId,
-    timeout: 300000, // 5-minute correlation window
+    correlationKey: (uow) => uow.event.order.orderId,
+    // the flavor's ttl and expire options bound the correlation window
   },
   {
     id: "evaluate-fraud",
-    flavor: evaluate, // CEP: evaluate complex conditions
+    flavor: evaluate, // trigger: run rules over correlated events, emit higher-order events
     eventType: "order-submitted",
-    expression: (uow) => uow.event.thing.total > 10000,
+    expression: (uow) => uow.event.order.total > 10000,
     emit: "fraud-review-required",
   },
 ];
+
+// Rule-driven and hand-written pipelines sit side by side
+const PIPELINES = { ...initializeFrom(RULES) };
 ```
 
 **Coupling analysis of the flavor pattern:**
@@ -1122,7 +1143,7 @@ const RULES = [
 | Custom pipelines | **Functional coupling** — only used when flavor abstractions don't fit        |
 | Between rules    | **Zero coupling** — each rule is independent; add/remove without side effects |
 
-**Why this matters for volatility:** In a core subdomain where business rules change frequently, you can add, modify, or remove rules _without touching pipeline infrastructure_. The flavor absorbs the complexity; the rule captures the intent. This is the coupling balance formula at work: **low integration strength** (declarative rules) compensates for the **high volatility** of rapidly evolving business logic.
+In a core subdomain where business rules change often, you add, modify, or remove rules _without touching pipeline infrastructure_. The flavor absorbs the mechanics; the rule captures the intent. Volatility stays high, because the rules still change often. What shrinks is the blast radius: a rule change is Contract coupling to the flavor's option shape, so it never reaches the flavor code.
 
 #### Hexagonal Architecture at Nano, Micro, and Macro Levels
 
@@ -1167,11 +1188,11 @@ flowchart TB
     style macro fill:#fff3e0,stroke:#ff9800
 ```
 
-**Nano level (function):** Each Lambda function follows handler → model → connector. The handler (aws-lambda-stream or lambda-api) is a driving adapter. Connectors (DynamoDB, S3 wrappers) are driven adapters. Swapping from Kinesis to SQS? Change only the handler. Swapping from DynamoDB to PostgreSQL? Change only the connector. The model — your domain logic — never changes.
+**Nano level (function):** Each Lambda function follows handler → model → connector. The handler (aws-lambda-stream or lambda-api) is a driving adapter. Connectors (DynamoDB, S3 wrappers) are driven adapters. Swapping Kinesis for SQS changes only the handler. Swapping DynamoDB for PostgreSQL changes only the connector. The model, your domain logic, does not change.
 
 **Micro level (service):** Functions within a service compose a **Trilateral API**: listener (async inbound), rest (sync), trigger (async outbound). The CPCQ Flow (Command ← Publish ← Consume ← Query) chains services together via domain events, creating arbitrarily complex systems from decoupled units.
 
-**Macro level (subsystem):** Services group into subsystems, each in its own AWS account. External Service Gateway (ESG) services form an **anti-corruption layer** that isolates the core from third-party systems, legacy APIs, and other subsystems' internal models.
+**Macro level (subsystem):** Services group into subsystems. External Service Gateway (ESG) services form an **anti-corruption layer** that isolates the core from third-party systems, legacy APIs, and other subsystems' internal models.
 
 | Architecture Level    | Information Hidden                                                        | Coupling Dimension Managed                              | aws-lambda-stream Role                        |
 | --------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------- |
@@ -1211,7 +1232,7 @@ flowchart LR
     style bus fill:#fff9c4,stroke:#fbc02d
 ```
 
-Each arrow crossing a service boundary carries only a **domain event** — a typed, versioned contract. Service A doesn't know Service B exists. Service B doesn't know _how_ the event was produced. The only shared knowledge is the event schema. This is textbook **contract coupling** at distance, and aws-lambda-stream's pipeline model makes it the _natural_ way to build.
+Each arrow crossing a service boundary carries only a **domain event**, a typed, versioned contract. Service A doesn't know Service B exists. Service B doesn't know _how_ the event was produced. The only shared knowledge is the event schema: **contract coupling** at distance.
 
 #### Fault Handling and the Stream Circuit Breaker
 
@@ -1237,18 +1258,18 @@ const PIPELINES = {
 
 1. When a pipeline stage errors, `faults` catches the error and **adorns** the UnitOfWork with fault metadata instead of terminating the stream.
 2. The faulted UnitOfWork flows to `flushFaults`, which publishes it to a Dead Letter Queue or EventBridge for downstream handling.
-3. **Non-faulted events continue processing** — one bad record doesn't poison the entire batch.
+3. **Non-faulted events continue processing.** One bad record doesn't poison the entire batch.
 
-**Coupling benefit:** Error handling is **decoupled from business logic**. Pipeline authors don't write try/catch blocks. The fault-handling pipeline doesn't know which pipeline produced the error. They communicate through the UnitOfWork — the same contract coupling that governs everything else.
+Error handling is **decoupled from business logic**. Pipeline authors don't write try/catch blocks. The fault-handling pipeline doesn't know which pipeline produced the error. They communicate through the UnitOfWork, the same contract that governs everything else.
 
 #### Coupling Analysis: aws-lambda-stream
 
-| Dimension                | Rating              | Analysis                                                                                                                                           |
+| Property                 | Rating              | Analysis                                                                                                                                           |
 | ------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Integration Strength** | 🟢 Contract         | Everything flows through UnitOfWork and Event contracts. Pipelines, flavors, and connectors interact only via typed shapes.                        |
-| **Distance**             | 🟡 Medium → 🔴 High | Within a function: near zero. Across services via EventBridge/Kinesis: high distance, but managed by contract coupling.                            |
-| **Volatility**           | 🟢 Low impact       | Flavor rules are declarative — business logic changes don't cascade. New patterns add rules; old patterns are removed without side effects.        |
-| **Temporal Coupling**    | 🟢 Low              | Kinesis and EventBridge provide durable, ordered delivery. Highland's lazy pull model + `rateLimit` handle back-pressure naturally.                |
+| **Integration Strength** | 🔵 Contract         | Everything flows through UnitOfWork and Event contracts. Pipelines, flavors, and connectors interact only via typed shapes.                        |
+| **Distance**             | 🟢 Low inside a function, 🔴 High across services | Across services via EventBridge/Kinesis the XOR holds. Inside one Lambda, all pipelines share one deploy unit and one uow schema: Contract at low distance, the low-cohesion cell. Keep the pipelines in a function cohesive, as the README itself advises |
+| **Volatility**           | Contained           | The rules still change as often as the business does. A rule change stays in the rule; the flavor code does not change.                            |
+| **Temporal Coupling**    | 🟢 Low              | Kinesis and EventBridge are durable buffers between producer and consumer. Highland's lazy pull model plus `rateLimit` handle flow control.        |
 | **Testability**          | 🟢 High             | Pipelines are pure Highland transforms testable with synchronous arrays. Models are plain classes testable without AWS. Connectors mock trivially. |
 
 **Comparison: Highland raw vs. aws-lambda-stream**
@@ -1256,7 +1277,7 @@ const PIPELINES = {
 | Aspect                    | Highland.js (raw)            | aws-lambda-stream                                                            |
 | ------------------------- | ---------------------------- | ---------------------------------------------------------------------------- |
 | **Abstraction level**     | Stream primitives            | Serverless event architecture                                                |
-| **Pipeline composition**  | Manual fork/merge/observe    | Declarative `PIPELINES` object + `assemblePipelines`                         |
+| **Pipeline composition**  | Manual fork/merge/observe    | Declarative `PIPELINES` object + `initialize(...).assemble(...)`             |
 | **Error handling**        | Manual `.errors()` callbacks | Stream Circuit Breaker pattern (`faults`/`flushFaults`)                      |
 | **AWS integration**       | Write your own adapters      | Built-in connectors (EventBridge, Kinesis, DynamoDB, S3, SNS, SQS)           |
 | **Reuse patterns**        | Build from scratch           | Flavors (`materialize`, `cdc`, `correlate`, `evaluate`, `expire`, `collect`) |
@@ -1296,21 +1317,21 @@ flowchart LR
         RS -->|"emits"| RT[Side Effect]
     end
 
-    imp -->|"Each arrow is<br/>functional/model coupling"| ImpScore["Strength: 🟠 Functional"]
+    imp -->|"Each arrow is<br/>model coupling"| ImpScore["Strength: 🟢 Model"]
     react -->|"Each arrow is<br/>contract coupling"| ReactScore["Strength: 🔵 Contract"]
 
-    style ImpScore fill:#ffa94d,color:#fff
+    style ImpScore fill:#69db7c,color:#333
     style ReactScore fill:#4dabf7,color:#fff
 ```
 
 | Pattern                        | Integration Strength                           | Distance         | Temporal Coupling                | Testability               |
 | ------------------------------ | ---------------------------------------------- | ---------------- | -------------------------------- | ------------------------- |
-| **Direct method call**         | 🟠 Functional — caller knows method signatures | 🟢 Low           | 🔴 High — both must be available | Requires mocking          |
-| **Observable pipeline**        | 🔵 Contract — only event shape shared          | 🟢 Low           | 🟡 Medium — buffering helps      | Test with marble diagrams |
-| **Actor messages (XState)**    | 🔵 Contract — only event types                 | 🟢 Low → 🟡 High | 🟢 Low — mailbox buffers         | Test with `@xstate/test`  |
-| **Highland stream**            | 🔵 Contract — only item shape                  | 🟢 Low           | 🟢 Low — lazy + back-pressure    | Test with sync arrays     |
+| **Direct method call**         | 🟢 Model — caller passes domain types           | 🟢 Low           | 🔴 High — both must be available | Requires mocking          |
+| **Observable pipeline**        | 🔵 Contract — only event shape shared          | 🟢 Low           | 🟡 Medium — in-process buffering | Test with marble diagrams |
+| **Actor messages (XState)**    | 🔵 Contract — only event types                 | 🟢 Low → 🟡 High | 🟡 Medium — the mailbox buffers, but both actors share a process | Model-based tests via `@xstate/graph` |
+| **Highland stream**            | 🔵 Contract — only item shape                  | 🟢 Low           | 🟡 Medium — lazy pull, same process | Test with sync arrays     |
 | **Shared database**            | 🔴 Intrusive — schema is shared                | 🔴 High          | 🔴 High — schema migration locks | Requires test database    |
-| **Sync HTTP between services** | 🟢 Model/Contract                              | 🔴 High          | 🔴 High — both must be up        | Requires service stubs    |
+| **Sync HTTP between services** | 🔵 Contract (DTOs) or 🟢 Model (domain objects on the wire) | 🔴 High | 🔴 High — both must be up        | Requires service stubs    |
 
 ### Full Scenario: Notification System
 
@@ -1331,13 +1352,13 @@ class NotificationService {
     const order = await this.orderRepo.findById(orderId);
     const user = await this.userRepo.findById(order.customerId);
 
-    // Functional coupling — knows email composition rules
+    // A business rule lives here: language selection
     const subject =
       user.preferredLanguage === "es"
         ? `Pedido ${order.id} enviado`
         : `Order ${order.id} shipped`;
 
-    // Intrusive coupling — knows SMTP details
+    // Contract coupling to SmtpClient's API; delivery details live in this class
     await this.emailClient.send({
       from: "noreply@shop.com",
       to: user.email,
@@ -1353,7 +1374,7 @@ class NotificationService {
 #### After: Reactive with contract coupling
 
 ```typescript
-import { Subject, mergeMap, map, tap, retry } from "rxjs";
+import { Subject, from, mergeMap, map, retry } from "rxjs";
 
 // ✅ Contract events — the ONLY shared types
 interface OrderShippedEvent {
@@ -1389,17 +1410,17 @@ const notifications$ = orderShipped$.pipe(
   ),
 );
 
-// ✅ Ce = 1 (only the event types). No knowledge of User, Order internals, or SMTP.
+// ✅ Ce = 2 (the event types and sendNotification). No knowledge of User, Order internals, or SMTP.
 notifications$.subscribe();
 ```
 
-**Coupling:** Ce = 1. The notification pipeline knows only event shapes. User lookup, template rendering, and delivery mechanism are all encapsulated in `sendNotification` — a function the pipeline knows only by its _contract_ (takes `NotificationRequest`, returns `Promise<void>`).
+**Coupling:** Ce = 2. The notification pipeline knows the event shapes and `sendNotification`, a function it knows only by its _contract_ (takes `NotificationRequest`, returns `Promise<void>`). User lookup, template rendering, and delivery are behind that contract.
 
 ---
 
 ## When FRP Increases Coupling (The Traps)
 
-FRP is not a silver bullet. Used carelessly, it can _increase_ coupling and complexity.
+Used carelessly, FRP _increases_ coupling and complexity.
 
 ### Trap 1: Observable Spaghetti
 
@@ -1424,7 +1445,7 @@ const result$ = combined$.pipe(
 // 🤯 Who can follow this? What depends on what?
 ```
 
-**Why it's bad:** The _observable graph_ itself becomes a form of **intrusive coupling** — every stream implicitly depends on the subscription timing and emission order of other streams. This is coupling hidden in data flow rather than in method signatures.
+**Why it's bad:** The _observable graph_ itself becomes **temporal coupling**. Every stream implicitly depends on the subscription timing and emission order of other streams. The coupling hides in data flow rather than in method signatures.
 
 **Fix:** Use named, purpose-driven pipelines with clear input/output contracts (like the Highland `pipeline` pattern).
 
@@ -1439,7 +1460,7 @@ orderSubmitted$.subscribe((order) => {
 });
 ```
 
-This is **temporal coupling** hiding in a reactive costume. Components appear decoupled but are secretly dependent on execution order.
+This is **temporal coupling**. The components look decoupled but depend on execution order.
 
 **Fix:** Make data dependencies explicit using operators like `withLatestFrom`, `combineLatest`, or by passing data through the event payload.
 
@@ -1464,7 +1485,7 @@ const finalPrice = Math.round(basePrice * quantity * (1 + taxRate) * 100) / 100;
 
 | Trap                     | What It Looks Like                  | Coupling Problem                                | Fix                                                   |
 | ------------------------ | ----------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| **Observable Spaghetti** | Dozens of interconnected streams    | Intrusive coupling via implicit data flow       | Named pipelines with clear contracts                  |
+| **Observable Spaghetti** | Dozens of interconnected streams    | Temporal coupling via implicit ordering and subscription timing | Named pipelines with clear contracts    |
 | **Implicit Ordering**    | Race conditions between subscribers | Hidden temporal coupling                        | Explicit data flow (`withLatestFrom`, event payloads) |
 | **Over-Abstraction**     | Observables wrapping pure functions | Unnecessary coupling to reactive library        | Use plain functions for synchronous logic             |
 | **Shared Mutable State** | Subscribers mutating a common cache | Intrusive coupling bypassing the reactive model | Actor model or immutable event payloads               |
@@ -1506,7 +1527,7 @@ flowchart TD
 | Subdomain                             | Reactive Pattern Recommendation                                                                                                                                                                                                 |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🔴 **Core** (high volatility)         | Actors (XState) for complex workflows; Observable pipelines for data flow. aws-lambda-stream flavors (`correlate`, `evaluate`) for serverless CEP. The contract-only coupling shields consumers from frequent internal changes. |
-| 🟡 **Supporting** (medium volatility) | Highland-style composable pipelines. aws-lambda-stream `materialize`/`cdc` flavors for standard event-sourcing patterns. Clean separation but without the overhead of full actor systems.                                       |
+| 🟢 **Supporting** (low volatility)    | Highland-style composable pipelines. aws-lambda-stream `materialize`/`cdc` flavors for standard event-sourcing patterns. Clean separation but without the overhead of full actor systems.                                       |
 | 🟢 **Generic** (low volatility)       | Plain functions and simple async/await usually suffice. Adding FRP patterns here risks over-abstraction without coupling benefits.                                                                                              |
 
 ---
@@ -1549,7 +1570,7 @@ flowchart TD
 | Concept                    | Where in This Guide                                 | Coupling Guide Reference                                                                           |
 | -------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Contract coupling          | Observable events, actor messages                   | [Dimensions → Integration Strength](coupling-dimensions.md#level-4-contract-coupling--lowest-risk) |
-| Temporal coupling          | Back-pressure, mailboxes                            | [References → Related Topics](coupling-references.md)                                              |
+| Temporal coupling          | Back-pressure, mailboxes                            | [Dimensions → Runtime, Temporal, and Lifecycle Coupling](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling) |
 | Event-driven architecture  | RxJS/RxJava pipelines, XState                       | [Coupling in Practice → After](coupling-in-practice.md)                                            |
 | Distributed monolith risks | Observable spaghetti, shared state                  | [Coupling in Practice → Scenario 1](coupling-in-practice.md#scenario-1-the-distributed-monolith)   |
 | Anti-corruption layer      | aws-lambda-stream ESG services, Akka.NET clustering | [Brownfield Strategies](brownfield-strategies.md)                                                  |
