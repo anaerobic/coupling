@@ -22,7 +22,9 @@ flowchart LR
 
 ## 1. Integration Strength
 
-**Integration Strength** categorizes _how much knowledge_ is shared between coupled components. More shared knowledge = higher risk that a change in one component cascading into changes in the other.
+**Integration Strength** categorizes _how much knowledge_ is shared between coupled components. The more knowledge is shared, the more likely a change in one component cascades into the other.
+
+The four levels also differ in how _explicit_ the shared knowledge is. A contract is an explicit, documented integration interface. Intrusive coupling is implicit: the intruded component's authors may not know the integration exists. Functional coupling can be implicit too, because two components that duplicate a business rule need not reference each other at all.
 
 ### The Four Levels
 
@@ -56,7 +58,7 @@ flowchart TB
 
 ### Level 1: Intrusive Coupling (🔴 Highest Risk)
 
-One component reaches into another's _implementation details_ — private objects, internal databases, undocumented APIs.
+One component reaches into another's _implementation details_: private objects, internal databases, undocumented APIs.
 
 #### TypeScript — Bad: Reading another service's database directly
 
@@ -346,7 +348,7 @@ def to_shipment_request(order: Order) -> ShipmentRequest:
 
 ### Level 4: Contract Coupling (🔵 Lowest Risk)
 
-Components only share a _contract_ — a DTO, API schema, event definition, or interface. The contract encapsulates all internal details.
+Components only share a _contract_: a DTO, API schema, event definition, or interface. The contract encapsulates the implementation details, the functional requirements, and the business model behind it. Façades, DDD's open-host service and published language, anti-corruption layers, and DTOs are all ways of introducing one.
 
 #### C# — Contract-based integration
 
@@ -479,6 +481,25 @@ class StripePaymentGateway:  # no explicit inheritance needed with Protocol
 
 ---
 
+### Which Level Is It?
+
+The level is set by _what knowledge_ crosses the boundary, not by the mechanism (HTTP, SDK, database, method call). The analysis tables in the rest of this guide use these rules:
+
+| You depend on...                                                                             | Level      | Why                                                                                            |
+| -------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| Tables, files, caches, or private members another component owns                             | Intrusive  | A private interface. The owner can change it without knowing you exist                         |
+| A business rule that another component also implements, or that you re-implement             | Functional | The rule lives in two places and both must change when the requirement changes                 |
+| Another component's domain entities, value objects, or ORM types (shared types, shared JARs)  | Model      | New domain insight changes the model, and every consumer of the model                          |
+| A documented API, SDK, DTO, published event, or interface                                     | Contract   | The contract hides implementation, requirements, and model                                     |
+
+Three cases come up repeatedly in the later documents:
+
+- **A method call** is not Functional by itself. Its strength is set by what the signature exposes: DTOs only is Contract; domain entities is Model.
+- **A public SDK or HTTP API** (Stripe, a vendor REST endpoint) is Contract, even though it crosses a network. It becomes Intrusive only when you rely on undocumented behavior or response shapes the vendor does not promise.
+- **A shared database** is Intrusive when one service reads or writes tables another service owns. When each service owns its tables and the others go through its API, the strength between services is Contract. The shared instance still raises lifecycle coupling (schema migrations and deployments are coordinated), which is a distance concern, not a strength concern.
+
+---
+
 ## 2. Distance
 
 **Distance** is the physical and logical separation between coupled components. Greater distance = higher cost of making coordinated changes.
@@ -538,11 +559,11 @@ flowchart LR
     micro -->|"Independent deployments<br/>Low lifecycle coupling"| Deploy2[🚀 Deploy each]
 ```
 
-> ⚠️ **This is why many "monolith to microservices" migrations start!** Teams want to reduce lifecycle coupling — they want to deploy independently. But if integration strength is high, they end up with a _distributed monolith_ — the worst of both worlds.
+> ⚠️ Many "monolith to microservices" migrations start here. Teams want to reduce lifecycle coupling so they can deploy independently. If integration strength stays high, they get a _distributed monolith_: the coordination cost of high distance with none of the independence.
 
 ### Socio-Technical Distance
 
-Distance isn't just about code — it's also about **teams**.
+Distance is socio-technical. The organizational structure counts as much as the code layout.
 
 ```mermaid
 flowchart TD
@@ -639,11 +660,23 @@ public class DashboardService
 }
 ```
 
+### Runtime, Temporal, and Lifecycle Coupling
+
+Three related terms appear throughout the later documents. They describe different things, and none of them is a fourth dimension:
+
+| Term                   | Meaning                                                                                   | Where it lives in the model                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Lifecycle coupling** | Components must be built, tested, and deployed together                                   | Falls as distance rises. The opposing force to cost of change                                |
+| **Temporal coupling**  | Components must be available at the same time for an interaction to succeed (a sync call) | A runtime dependency. Async integration removes it                                           |
+| **Runtime coupling**   | Any dependency between components while the system runs: availability, ordering, latency  | Affects distance. Asynchronous integration reduces lifecycle coupling between the components |
+
+Khononov's distance page lists runtime dependencies alongside source layout, abstraction level, and team structure as inputs to distance. So switching a synchronous call to an event does not lower integration strength by itself. It removes temporal coupling and reduces lifecycle coupling; the strength is still set by what the event carries (a DTO is Contract, a serialized domain entity is Model).
+
 ---
 
 ## 3. Volatility
 
-**Volatility** captures how likely a component is to change. High volatility + tight coupling = constant pain. Low volatility + tight coupling = manageable.
+**Volatility** is how likely a component is to change, driven by its business domain. It is a property of the component, not of its integration. Putting a contract in front of a volatile component contains the cascade; it does not make the component less volatile. High volatility with tight coupling is constant pain. Low volatility with tight coupling is manageable.
 
 ### ELI5: Volatility
 
@@ -663,19 +696,21 @@ flowchart TD
     BD --> Generic
 
     Core["🔴 Core Subdomain<br/>Competitive advantage<br/>Constantly evolving<br/>HIGH volatility"]
-    Supporting["🟡 Supporting Subdomain<br/>Necessary but not differentiating<br/>Changes occasionally<br/>MEDIUM volatility"]
+    Supporting["🟢 Supporting Subdomain<br/>Necessary but not differentiating<br/>No off-the-shelf solution<br/>LOW volatility"]
     Generic["🟢 Generic Subdomain<br/>Solved problems<br/>Off-the-shelf solutions<br/>LOW volatility"]
 
     style Core fill:#ff6b6b,color:#fff
-    style Supporting fill:#ffd43b,color:#333
+    style Supporting fill:#69db7c,color:#333
     style Generic fill:#69db7c,color:#333
 ```
 
-| Subdomain      | Example                     | Volatility | Coupling Strategy                                       |
-| -------------- | --------------------------- | ---------- | ------------------------------------------------------- |
-| **Core**       | Real-time pricing algorithm | 🔴 High    | Minimize integration strength, isolate behind contracts |
-| **Supporting** | User registration flow      | 🟡 Medium  | Model coupling OK if within same service                |
-| **Generic**    | Email sending, logging      | 🟢 Low     | Even tight coupling is acceptable                       |
+| Subdomain      | Example                     | Volatility | Coupling Strategy                                                         |
+| -------------- | --------------------------- | ---------- | ------------------------------------------------------------------------- |
+| **Core**       | Real-time pricing algorithm | 🔴 High    | Minimize integration strength, isolate behind contracts                   |
+| **Supporting** | User registration flow      | 🟢 Low     | Built in-house but rarely changes. Model coupling OK within the service   |
+| **Generic**    | Email sending, logging      | 🟢 Low     | Solved problem. Even tight coupling is acceptable                         |
+
+Only core subdomains provide a competitive advantage, so only they are continuously optimized. Khononov rates supporting and generic subdomains as "much less volatile" with no middle tier. Beyond DDD subdomains, the commoditization axis of a Wardley map is another predictor: components drifting toward commodity change less.
 
 ### TypeScript — Volatility-aware architecture
 
@@ -688,7 +723,7 @@ interface PricingContract {
   calculatePrice(productId: string, context: PricingContext): Promise<Price>;
 }
 
-// 🟡 SUPPORTING: Inventory Management — changes quarterly
+// 🟢 SUPPORTING: Inventory Management — built in-house, changes rarely
 // Model coupling is fine within the bounded context
 class InventoryService {
   constructor(private repo: InventoryRepository) {}
@@ -697,7 +732,7 @@ class InventoryService {
     orderId: string,
     items: StockReservation[],
   ): Promise<void> {
-    // Uses shared domain model — acceptable at medium volatility
+    // Uses shared domain model — acceptable at low volatility
     for (const item of items) {
       const stock = await this.repo.findByProductId(item.productId);
       stock.reserve(item.quantity, orderId);
@@ -740,7 +775,7 @@ class PricingPort(Protocol):
     def calculate_price(self, product_id: str, context: "PricingContext") -> "Price": ...
 
 
-# 🟡 SUPPORTING: Inventory Management — changes quarterly
+# 🟢 SUPPORTING: Inventory Management — built in-house, changes rarely
 # Model coupling is fine within the bounded context
 @dataclass
 class StockReservation:
@@ -946,13 +981,17 @@ flowchart TD
 ### The Decision Heuristic
 
 1. **Classify** the subdomain (Core / Supporting / Generic) → determines volatility
-2. **Assess** integration strength → how much knowledge must be shared?
+2. **Assess** integration strength → how much knowledge must be shared? (see [Which Level Is It?](#which-level-is-it))
 3. **Measure** distance → same class, same package, different service, different system?
 4. **Balance**:
-   - High volatility? → Minimize strength AND distance
    - High strength unavoidable? → Minimize distance (keep components close)
    - High distance unavoidable? → Minimize strength (use contracts)
-   - Low volatility? → Relax — even imperfect coupling is OK
+   - Low strength and low distance? → Unrelated components sitting together. Fine in small doses; a big ball of mud at scale
+   - Low volatility? → Relax. Even imperfect coupling is OK
+
+### Reading the Analysis Tables
+
+Every coupling-analysis table in this guide ends with a verdict row. The verdict applies the binary balance formula from the [main guide](README.md#balance-the-key-insight): `BALANCE = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY`. This guide's convention for the binary form: Intrusive and Functional count as high strength, Model and Contract as low; anything across a process boundary counts as high distance. A ✅ verdict means the formula holds, and the row says which term made it hold.
 
 ---
 
