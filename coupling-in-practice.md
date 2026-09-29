@@ -53,9 +53,9 @@ flowchart TD
     style SS fill:#ffa8a8,color:#000
 ```
 
-Notice the web of synchronous calls between services — every service knows about and directly calls multiple other services. This is the signature of a distributed monolith: the coupling topology of a monolith with the operational complexity of a distributed system.
+Every service knows about and directly calls several other services. That web of synchronous calls is the signature of a distributed monolith: the coupling topology of a monolith with the operational complexity of a distributed system.
 
-**What makes this a distributed monolith (not just "shared database"):**
+**What makes this a distributed monolith, beyond the shared database:**
 
 | Symptom                              | How it manifests                                                                                                           |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -71,8 +71,8 @@ Notice the web of synchronous calls between services — every service knows abo
 |---|---|---|
 | Integration Strength | 🔴 Intrusive | Services share database internals, read/write each other's tables, and depend on internal models |
 | Distance | 🔴 High | Five separate deployable services with network boundaries |
-| Volatility | 🔴 High | Core business domain — order, payment, customer, inventory, shipping |
-| **Verdict** | ❌ | **Distributed Monolith** — all the complexity of distribution with none of the benefits |
+| Volatility | 🔴 High | Core business domain: order, payment, customer, inventory, shipping |
+| **Verdict** | ❌ | **Distributed Monolith.** Intrusive strength at high distance: `STRENGTH XOR DISTANCE` is false, and high volatility means it hurts often |
 
 ### TypeScript — Before: Tangled services with shared database
 
@@ -110,6 +110,7 @@ export class OrderService {
     // ❌ Synchronous call to Payment Service — if it's down, orders break
     const paymentResult = await fetch("http://payment-service:3002/charge", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         customerId: req.customerId,
         amount: req.total,
@@ -135,6 +136,7 @@ export class OrderService {
     // ❌ Synchronous call to Shipping — if it's down, the order is half-created
     await fetch("http://shipping-service:3004/shipments", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         orderId: result.rows[0].id,
         warehouseId: stock.rows[0].warehouse_id,
@@ -165,6 +167,7 @@ export class PaymentService {
     // ❌ Synchronous callback to Order Service to update status
     await fetch("http://order-service:3001/orders/" + req.orderId + "/status", {
       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "payment_confirmed" }),
     });
 
@@ -217,15 +220,15 @@ flowchart TD
     OS -.->|"HTTP: Get customer"| CSvc
 ```
 
-> **Three C's lens:** This "After" design is an **Anthology (AEC)** saga — Asynchronous communication via the Event Bus, Eventual consistency (no compensation/rollback), and Choreographed coordination (no central orchestrator). This gives maximum decoupling but requires distributed tracing for observability. See [The Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) for the full taxonomy.
+> **Three C's lens:** The event flow is an **Anthology (AEC)** saga: asynchronous communication over the Event Bus, eventual consistency with no compensation, and choreographed coordination with no central orchestrator. The two dotted HTTP calls (customer lookup and credit check) are request-response reads made before the saga starts; they keep temporal coupling to those two services and nothing else. Observability needs distributed tracing. See [The Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species).
 
 **Coupling Analysis After:**
 | Dimension | Value | Why |
 |---|---|---|
-| Integration Strength | 🟢 Contract | Services share only event contracts and API contracts |
-| Distance | 🟡 High | Still separate services, but now appropriately decoupled |
-| Volatility | 🔴 High | Still core domain, but now changes are isolated |
-| **Verdict** | ✅ | **Loose Coupling** — strength reduced to match the distance |
+| Integration Strength | 🔵 Contract | Services share only event contracts and API contracts |
+| Distance | 🔴 High | Still separate services |
+| Volatility | 🔴 High | Still core domain; the redesign does not change how often it changes |
+| **Verdict** | ✅ | **Loose Coupling.** Contract strength at high distance: the XOR holds |
 
 ### TypeScript — After: Event-driven with contracts
 
@@ -357,6 +360,8 @@ export class PaymentConfirmedHandler {
 }
 ```
 
+**When a step fails.** If the payment service cannot charge the customer, it publishes a `PaymentFailed` event and the order service marks the order failed. Nothing else has happened yet, so there is nothing to compensate. If inventory fails _after_ payment, an Anthology saga has no rollback: the order is marked failed and the refund is a separate business process. That is the eventual-consistency tradeoff. When you need the refund to be part of the same transaction, you need a compensation step, which is the [Fantasy (AAO)](three-cs-distributed-transactions.md#the-eight-saga-species) saga that [durable execution](durable-execution-orchestration.md#the-saga-pattern-before-and-after-temporal) makes tractable.
+
 ---
 
 ## Scenario 2: The God Service (Monolith)
@@ -432,20 +437,23 @@ public class CustomerManagementService
 
 - Ce = 8 (depends on 8 external concerns)
 - Ca = high (many parts of the app call this service)
-- Instability = moderate, but the class is doing too much
+- Instability cannot be computed without a Ca count, but Ce = 8 alone means this class changes whenever any of eight dependencies does
 
 ### C# — After: Separated by domain concern
 
 ```csharp
-// ✅ Each step is its own focused service
-// Orchestrated via domain events
+// ✅ Each step is its own focused handler
+// Coordinated via domain events: choreography. The publisher does not know
+// who handles OrderSubmitted; each handler reacts on its own.
 
-// Domain Events
-public record OrderSubmitted(string OrderId, string CustomerId, decimal Total, string State);
-public record PaymentProcessed(string OrderId, string TransactionId);
-public record InventoryReserved(string OrderId, string ProductId, int Quantity);
+// Domain Events (MediatR notifications must implement INotification)
+public record OrderSubmitted(
+    string OrderId, string CustomerId, string ProductId, int Quantity,
+    decimal Total, string State) : INotification;
+public record PaymentProcessed(string OrderId, string TransactionId) : INotification;
+public record InventoryReserved(string OrderId, string ProductId, int Quantity) : INotification;
 
-// Lean orchestrator — only coordinates the happy path
+// Publisher: owns the order and the credit check, nothing else
 public class OrderService
 {
     private readonly IOrderRepository _orders;
@@ -465,6 +473,8 @@ public class OrderService
         await _mediator.Publish(new OrderSubmitted(
             OrderId: order.Id,
             CustomerId: request.CustomerId,
+            ProductId: request.ProductId,
+            Quantity: request.Quantity,
             Total: request.Total,
             State: request.State
         ));
@@ -483,12 +493,35 @@ public class TaxHandler : INotificationHandler<OrderSubmitted>
     }
 }
 
+public class PaymentHandler : INotificationHandler<OrderSubmitted>
+{
+    private readonly IPaymentProcessor _payments;
+    private readonly IMediator _mediator;
+    public async Task Handle(OrderSubmitted evt, CancellationToken ct)
+    {
+        var txn = await _payments.Charge(evt.CustomerId, evt.Total);
+        await _mediator.Publish(new PaymentProcessed(evt.OrderId, txn.Id), ct);
+    }
+}
+
 public class InventoryHandler : INotificationHandler<OrderSubmitted>
 {
     private readonly IInventoryService _inventory;
+    private readonly IMediator _mediator;
     public async Task Handle(OrderSubmitted evt, CancellationToken ct)
     {
-        await _inventory.Reserve(evt.OrderId);
+        await _inventory.Reserve(evt.ProductId, evt.Quantity, evt.OrderId);
+        await _mediator.Publish(
+            new InventoryReserved(evt.OrderId, evt.ProductId, evt.Quantity), ct);
+    }
+}
+
+public class ShippingHandler : INotificationHandler<InventoryReserved>
+{
+    private readonly IShippingProvider _shipping;
+    public async Task Handle(InventoryReserved evt, CancellationToken ct)
+    {
+        await _shipping.CreateShipment(evt.OrderId);
     }
 }
 
@@ -515,21 +548,25 @@ public class AnalyticsHandler : INotificationHandler<OrderSubmitted>
 
 ```mermaid
 flowchart TD
-    OS[OrderService<br/>Ce=2, Ca=high]
+    OS[OrderService<br/>Ce=3, Ca=high]
 
     OS -->|"OrderSubmitted"| TH[TaxHandler<br/>Ce=1]
-    OS -->|"OrderSubmitted"| IH[InventoryHandler<br/>Ce=1]
+    OS -->|"OrderSubmitted"| PH[PaymentHandler<br/>Ce=2]
+    OS -->|"OrderSubmitted"| IH[InventoryHandler<br/>Ce=2]
     OS -->|"OrderSubmitted"| NH[NotificationHandler<br/>Ce=2]
     OS -->|"OrderSubmitted"| AH[AnalyticsHandler<br/>Ce=1]
+    IH -->|"InventoryReserved"| SH[ShippingHandler<br/>Ce=1]
 
     style OS fill:#4dabf7,color:#fff
 ```
+
+The god service's Ce of 8 is now spread across seven classes, none above 3. The arrows are event subscriptions, not references: `OrderService` depends on `IMediator` and the event type, never on the handlers. In coupling terms the handlers are Contract-coupled to the event shape at low distance (same process). The balance formula calls low strength at low distance "low cohesion"; that is a fair warning here. If the handlers never move to separate deployables, the events are indirection you pay for in traceability, and a direct call from a smaller `OrderService` would do.
 
 ---
 
 ## Scenario 3: Shared Library Hell
 
-Sharing a library across services can introduce hidden coupling.
+Sharing a library across services turns Model coupling into a deployment dependency.
 
 ### ELI5
 
@@ -541,7 +578,8 @@ Sharing a library across services can introduce hidden coupling.
 
 ```java
 // ❌ shared-models library — used by Order, Payment, and Shipping services
-// ANY change here forces ALL services to update
+// Any change here forces every consumer to rebuild. Versioning the library
+// defers the upgrade; it does not remove it.
 
 package com.example.shared.models;
 
@@ -631,11 +669,22 @@ flowchart LR
     style CA fill:#69db7c,color:#333
 ```
 
+The transition is from **Model** to **Contract** coupling. Before, three services depended on one `Customer` type, so a field added for marketing recompiled shipping. After, each service depends on the Customer API's contract and maps it into a model of its own. The distance is unchanged; the strength dropped one level, and that is what makes the XOR hold.
+
+**Coupling Analysis:**
+
+| Dimension            | Before                                                   | After                                                     |
+| -------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| Integration Strength | 🟢 Model — one shared `Customer` record                  | 🔵 Contract — each service knows only the Customer API    |
+| Distance             | 🔴 High — separately deployed services                   | 🔴 High — unchanged                                       |
+| Volatility           | 🔴 High — the customer model is core and grows a field per new need | 🔴 High — unchanged                            |
+| **Verdict**          | ❌ Model strength at high distance                       | ✅ Contract strength at high distance                     |
+
 ---
 
 ## Scenario 4: Temporal Coupling in Synchronous Calls
 
-When services call each other synchronously, they create temporal coupling — both must be running at the same time. The "Before" example below is an **Epic (SAO)** saga — the most tightly coupled of the [Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species). The "After" refactoring moves toward **Parallel (AEO)** by introducing async communication via queues while maintaining orchestrated coordination. See [The Three C's of Distributed Transactions](three-cs-distributed-transactions.md) for the full framework.
+When services call each other synchronously, they create [temporal coupling](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling): both must be running at the same time. The "Before" example below is an **Epic (SAO)** saga, the most tightly coupled of the [Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species). The "After" is a **Parallel (AEO)** saga: asynchronous events, eventual consistency, and an order saga that decides each next step. See [The Three C's of Distributed Transactions](three-cs-distributed-transactions.md) for the framework.
 
 ### ELI5
 
@@ -655,6 +704,7 @@ class OrderService {
     // Step 1: Check payment (blocks)
     const paymentResult = await fetch("http://payment-service/charge", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount: req.total, customerId: req.customerId }),
     });
     if (!paymentResult.ok) throw new Error("Payment failed");
@@ -662,6 +712,7 @@ class OrderService {
     // Step 2: Reserve inventory (blocks)
     const inventoryResult = await fetch("http://inventory-service/reserve", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ productId: req.productId, qty: req.quantity }),
     });
     if (!inventoryResult.ok) {
@@ -675,10 +726,11 @@ class OrderService {
     // Step 3: Create shipment (blocks)
     const shipResult = await fetch("http://shipping-service/ship", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderId: "new", address: req.address }),
     });
-    // What if THIS fails? Roll back inventory AND payment?
-    // This is getting really complicated...
+    // If this fails, inventory AND payment need rolling back, and the
+    // rollback calls can fail too.
 
     return { id: "new", status: "confirmed" };
   }
@@ -732,7 +784,7 @@ class OrderSaga {
   // React to payment failure
   async onPaymentFailed(event: PaymentFailedEvent): Promise<void> {
     await this.orderRepo.updateStatus(event.orderId, "payment_failed");
-    // No rollback needed — nothing else happened yet
+    // No rollback needed: nothing else happened yet
   }
 
   // React to inventory reserved
@@ -743,8 +795,17 @@ class OrderSaga {
       orderId: event.orderId,
     });
   }
+
+  // React to inventory failure. Payment already happened, and this saga has
+  // no compensation step (eventual consistency), so the refund is a separate
+  // business process triggered by the status change.
+  async onInventoryFailed(event: InventoryFailedEvent): Promise<void> {
+    await this.orderRepo.updateStatus(event.orderId, "failed_after_payment");
+  }
 }
 ```
+
+The saga answers the "Before" example's question honestly rather than by adding rollback code. If inventory fails after payment, the order carries a status that says so and a refund is issued by a separate process. If that is unacceptable, you need a compensation step, which is the Fantasy (AAO) species. The [durable execution guide](durable-execution-orchestration.md#the-saga-pattern-before-and-after-temporal) shows what that costs to hand-roll and what a platform removes.
 
 ```mermaid
 sequenceDiagram
@@ -762,31 +823,49 @@ sequenceDiagram
 
     Bus->>PaySvc: OrderCreated
     PaySvc->>PaySvc: Process payment
-    PaySvc->>Bus: PaymentConfirmed
+    PaySvc->>Bus: PaymentProcessed
+
+    Bus->>OrderSvc: PaymentProcessed
+    OrderSvc->>OrderSvc: pending_inventory
+    OrderSvc->>Bus: PaymentConfirmed
 
     Bus->>InvSvc: PaymentConfirmed
     InvSvc->>InvSvc: Reserve stock
     InvSvc->>Bus: InventoryReserved
 
-    Bus->>ShipSvc: InventoryReserved
-    ShipSvc->>ShipSvc: Create shipment
-    ShipSvc->>Bus: ShipmentCreated
+    Bus->>OrderSvc: InventoryReserved
+    OrderSvc->>OrderSvc: confirmed
+    OrderSvc->>Bus: OrderConfirmed
 
-    Bus->>OrderSvc: ShipmentCreated
-    OrderSvc->>OrderSvc: Update to "shipped"
+    Bus->>ShipSvc: OrderConfirmed
+    ShipSvc->>ShipSvc: Create shipment
 ```
+
+The order service decides every next step, which is what makes this orchestrated rather than choreographed: payment and inventory react only to events the saga publishes, never to each other.
+
+**Coupling Analysis:**
+
+| Dimension            | Before (Epic)                                              | After (Parallel)                                                  |
+| -------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| Integration Strength | 🔵 Contract — HTTP request and response shapes             | 🔵 Contract — event shapes                                        |
+| Distance             | 🔴 High — separately deployed services                     | 🔴 High — unchanged                                               |
+| Volatility           | 🔴 High — core order flow                                  | 🔴 High — unchanged                                               |
+| Temporal coupling    | 🔴 Every service must be up for any order to complete      | 🟢 None. A down service delays its step; it does not fail the order |
+| **Verdict**          | ✅ by the formula, yet fragile: the XOR holds, and the failure is availability, which the three dimensions do not measure | ✅ The same strength and distance, with the availability dependency removed |
+
+The Before column is the reason the [dimensions doc](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling) lists temporal coupling separately. A synchronous chain of clean contracts is loosely coupled by the formula and still goes down as one unit.
 
 ---
 
 ## Scenario 5: Service-Based Architecture
 
-A pragmatic middle ground between monolith and microservices. Mark Richards describes this as extracting a handful of **coarse-grained domain services** — typically 4 to 12 — that share a database (or a small number of databases), with each service owning its domain logic and its own tables. See [brownfield-strategies.md — Service-Based Architecture](brownfield-strategies.md#service-based-architecture) for migration strategies.
+A pragmatic middle ground between monolith and microservices. Mark Richards describes this as extracting a handful of **coarse-grained domain services** that share a database (or a small number of databases), with each service owning its domain logic and its own tables. See [brownfield-strategies.md: Service-Based Architecture](brownfield-strategies.md#service-based-architecture) for migration strategies.
 
 ### ELI5
 
 > 🏢 **Imagine a company in one office building.**
 >
-> A monolith is everyone in one giant open-plan room — accounting, engineering, sales, support, all shouting over each other. Microservices is giving every person their own building in different cities. **Service-based architecture** puts each department on its own floor. They have their own space (separate deployments), share the building (shared database), and take the elevator when they need to talk (internal API calls). Nobody reaches into another department's filing cabinets.
+> A monolith is everyone in one giant open-plan room: accounting, engineering, sales, support, all shouting over each other. Microservices is giving every person their own building in different cities. **Service-based architecture** puts each department on its own floor. They have their own space (separate deployments), share the building (shared database), and take the elevator when they need to talk (internal API calls). Nobody reaches into another department's filing cabinets.
 
 ### Architecture
 
@@ -830,12 +909,12 @@ flowchart TD
 
 ### Coupling Analysis
 
-| Dimension            | Value         | Why                                                                                         |
-| -------------------- | ------------- | ------------------------------------------------------------------------------------------- |
-| Integration Strength | 🟡 Model      | Services share the database schema (model coupling), but each owns its tables               |
-| Distance             | 🟢 Low-Medium | Separate deployments but same infrastructure and shared database                            |
-| Volatility           | 🟡 Medium     | Core domains change independently but share data model                                      |
-| **Verdict**          | ✅            | **Pragmatic balance — less coupling than a monolith, far less overhead than microservices** |
+| Dimension            | Value       | Why                                                                                                                                          |
+| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration Strength | 🔵 Contract | Services reach each other only through APIs. The shared database instance is not shared knowledge as long as each service owns its tables      |
+| Distance             | 🔴 High     | Separate deployables. The shared database raises lifecycle coupling: schema migrations and some deployments are coordinated                  |
+| Volatility           | 🔴 High     | Core domains                                                                                                                                 |
+| **Verdict**          | ✅          | Contract strength at high distance. The shared database is a lifecycle cost, not a strength cost. It becomes ❌ Intrusive the moment one service reads another's tables |
 
 ### TypeScript — Service-Based Architecture
 
@@ -1019,17 +1098,17 @@ public class OrderDomainService {
 
 | ✅ Good Fit                                                        | ❌ Poor Fit                                                     |
 | ------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Team of 5–25 engineers                                             | 100+ engineers requiring fully independent deployment cadences  |
+| A few teams that can coordinate schema changes                     | Many teams that need fully independent deployment cadences      |
 | Limited DevOps maturity or infrastructure budget                   | Mature platform team with full observability and service mesh   |
 | You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features                 |
-| Your monolith has identifiable domain boundaries                   | Your system has no domain cohesion — it's a big ball of mud     |
+| Your monolith has identifiable domain boundaries                   | Your system has no domain cohesion: a big ball of mud           |
 | Evolutionary stepping stone → microservices if needed              | Greenfield with clear bounded contexts and strong platform team |
 
 ---
 
 ## Scenario 6: Hexagonal Architecture (Ports & Adapters)
 
-The gold standard for managing coupling in a single service or module.
+The standard way to manage coupling inside a single service or module.
 
 ```mermaid
 flowchart TD
@@ -1079,6 +1158,16 @@ export class Order {
     return new Order(crypto.randomUUID(), customerId, items, "draft");
   }
 
+  // For repositories: rebuild an existing order without re-running creation rules
+  static rehydrate(
+    id: string,
+    customerId: string,
+    items: OrderItem[],
+    status: OrderStatus,
+  ): Order {
+    return new Order(id, customerId, items, status);
+  }
+
   get total(): number {
     return this.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   }
@@ -1098,6 +1187,12 @@ export class Order {
 export interface OrderRepository {
   save(order: Order): Promise<void>;
   findById(id: string): Promise<Order | null>;
+}
+
+export interface PaymentResult {
+  success: boolean;
+  transactionId?: string;
+  reason?: string;
 }
 
 export interface PaymentGateway {
@@ -1157,6 +1252,13 @@ import { OrderRepository } from "../domain/ports/outbound";
 import { Order } from "../domain/entities/order";
 import { Pool } from "pg";
 
+type OrderRow = {
+  id: string;
+  customer_id: string;
+  status: OrderStatus;
+  items?: OrderItem[];
+};
+
 export class PostgresOrderRepository implements OrderRepository {
   constructor(private pool: Pool) {}
 
@@ -1174,26 +1276,35 @@ export class PostgresOrderRepository implements OrderRepository {
     return result.rows[0] ? this.toDomain(result.rows[0]) : null;
   }
 
-  private toDomain(row: any): Order {
-    /* mapping logic */
+  private toDomain(row: OrderRow): Order {
+    // items come from an order_items join in a real mapper
+    return Order.rehydrate(row.id, row.customer_id, row.items ?? [], row.status);
   }
 }
 
 // adapters/stripe-payment-gateway.ts
+import Stripe from "stripe";
 import { PaymentGateway, PaymentResult } from "../domain/ports/outbound";
 
 export class StripePaymentGateway implements PaymentGateway {
-  constructor(private stripeKey: string) {}
+  constructor(private stripe: Stripe) {}
 
   async charge(customerId: string, amount: number): Promise<PaymentResult> {
-    // Stripe-specific implementation hidden here
-    const stripe = new Stripe(this.stripeKey);
-    const intent = await stripe.paymentIntents.create({
+    // Stripe-specific implementation hidden here. Without confirm the intent
+    // stays in requires_payment_method; confirm + off_session charges the
+    // customer's saved payment method in one call.
+    const intent = await this.stripe.paymentIntents.create({
       amount: Math.round(amount * 100),
       currency: "usd",
       customer: customerId,
+      confirm: true,
+      off_session: true,
     });
-    return { success: intent.status === "succeeded", transactionId: intent.id };
+    return {
+      success: intent.status === "succeeded",
+      transactionId: intent.id,
+      reason: intent.last_payment_error?.message,
+    };
   }
 }
 
@@ -1259,6 +1370,8 @@ public interface IOrderRepository
     Task Save(Order order);
     Task<Order?> FindById(string id);
 }
+
+public record PaymentResult(bool Success, string? TransactionId, string? Reason = null);
 
 public interface IPaymentGateway
 {
@@ -1339,14 +1452,26 @@ public class StripeGateway : IPaymentGateway
             Amount = (long)(amount * 100),
             Currency = "usd",
             Customer = customerId,
+            Confirm = true,       // otherwise the intent waits for a payment method
+            OffSession = true,
         });
         return new PaymentResult(
             intent.Status == "succeeded",  // ⚠️ connascence of meaning: magic string
-            intent.Id
+            intent.Id,
+            intent.LastPaymentError?.Message
         );
     }
 }
 ```
+
+**Coupling Analysis (all three languages):**
+
+| Dimension            | Value       | Why                                                                                                   |
+| -------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| Integration Strength | 🔵 Contract | Core and adapters share only the port interfaces                                                      |
+| Distance             | 🟢 Low      | Same deployable, same codebase                                                                        |
+| Volatility           | Mixed       | The core is the volatile business logic; the adapters change when a vendor or a database does         |
+| **Verdict**          | ⚠️          | Low strength at low distance is the formula's low-cohesion cell. It is worth paying for when adapters get swapped (test doubles, vendor changes) and there are few of them. A port with one implementation that never changes is indirection, which the [metrics doc](coupling-metrics-and-refactoring.md#when-are-interfaces-actually-useful) covers |
 
 ### Java — Hexagonal Architecture
 
@@ -1360,10 +1485,17 @@ public class Order {
     private final List<OrderItem> items;
     private OrderStatus status;
 
+    private Order(String id, String customerId, List<OrderItem> items, OrderStatus status) {
+        this.id = id;
+        this.customerId = customerId;
+        this.items = items;
+        this.status = status;
+    }
+
     public static Order create(String customerId, List<OrderItem> items) {
         if (items.isEmpty()) throw new DomainException("Order must have items");
-        // Connascence of position in private constructor — acceptable
-        // because it's encapsulated within the aggregate (low distance).
+        // Connascence of position in the private constructor is acceptable:
+        // it is encapsulated within the aggregate (low distance).
         return new Order(UUID.randomUUID().toString(), customerId, items, OrderStatus.DRAFT);
     }
 
@@ -1387,6 +1519,8 @@ public interface OrderRepository {
     void save(Order order);
     Optional<Order> findById(String id);
 }
+
+public record PaymentResult(boolean success, String transactionId, String reason) {}
 
 public interface PaymentGateway {
     PaymentResult charge(String customerId, BigDecimal amount);
@@ -1436,6 +1570,10 @@ package com.example.infrastructure;
 public class JpaOrderRepository implements OrderRepository {
     private final JpaOrderEntityRepository jpaRepo;
 
+    public JpaOrderRepository(JpaOrderEntityRepository jpaRepo) {
+        this.jpaRepo = jpaRepo;
+    }
+
     @Override
     public void save(Order order) {
         jpaRepo.save(OrderEntity.fromDomain(order));
@@ -1449,7 +1587,6 @@ public class JpaOrderRepository implements OrderRepository {
 
 @Component
 public class StripePaymentGateway implements PaymentGateway {
-    private final Stripe stripe;
 
     @Override
     public PaymentResult charge(String customerId, BigDecimal amount) {
@@ -1458,11 +1595,17 @@ public class StripePaymentGateway implements PaymentGateway {
             .setAmount(amount.multiply(new BigDecimal(100)).longValue())
             .setCurrency("usd")
             .setCustomer(customerId)
+            .setConfirm(true)       // otherwise the intent waits for a payment method
+            .setOffSession(true)
             .build();
 
         PaymentIntent intent = PaymentIntent.create(params);
         // ⚠️ connascence of meaning: "succeeded" is a magic string
-        return new PaymentResult("succeeded".equals(intent.getStatus()), intent.getId());
+        var error = intent.getLastPaymentError();
+        return new PaymentResult(
+            "succeeded".equals(intent.getStatus()),
+            intent.getId(),
+            error == null ? null : error.getMessage());
     }
 }
 ```
@@ -1509,7 +1652,7 @@ Use this checklist during code reviews and architecture reviews:
 - [ ] **Shared Libraries**: Is a shared library forcing coordinated deployments? Consider Anti-Corruption Layers.
 - [ ] **Temporal Coupling**: Are synchronous call chains creating runtime coupling? Consider async events or [durable execution](durable-execution-orchestration.md).
 - [ ] **Architecture Tests**: Do you have ArchUnit / ArchUnitNET / dependency-cruiser rules enforcing boundaries?
-- [ ] **Connascence**: Can you weaken connascence — e.g., positional args → named args, magic strings → enums/constants, shared algorithms → contracts?
+- [ ] **Connascence**: Can you weaken connascence? Positional args → named args, magic strings → enums/constants, two copies of an algorithm → one shared implementation.
 
 ---
 
