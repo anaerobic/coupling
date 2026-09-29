@@ -140,16 +140,16 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
     cancelled = true;
   });
 
-  // Step 1: Payment
-  const paymentId = await validatePayment(order.customerId, order.total);
+  // Step 1: Payment. The order id is the idempotency key for the charge.
+  const paymentId = await validatePayment(order.id, order.customerId, order.total);
 
   if (cancelled) {
     await refundPayment(paymentId);
     return { status: "cancelled" };
   }
 
-  // Step 2: Inventory
-  const reservationId = await reserveInventory(order.productId, order.quantity);
+  // Step 2: Inventory. The order id is also the reservation id.
+  const reservationId = await reserveInventory(order.id, order.productId, order.quantity);
 
   if (cancelled) {
     await releaseInventory(reservationId);
@@ -211,8 +211,8 @@ import { Pool } from "pg";
 import type { Address, ShippingClient } from "./types";
 
 export interface OrderActivities {
-  validatePayment(customerId: string, amount: number): Promise<string>;
-  reserveInventory(productId: string, qty: number): Promise<string>;
+  validatePayment(orderId: string, customerId: string, amount: number): Promise<string>;
+  reserveInventory(orderId: string, productId: string, qty: number): Promise<string>;
   createShipment(address: Address, reservationId: string): Promise<string>;
   refundPayment(paymentId: string): Promise<void>;
   releaseInventory(reservationId: string): Promise<void>;
@@ -224,30 +224,60 @@ export function createOrderActivities(
   shippingApi: ShippingClient,
 ): OrderActivities {
   return {
-    async validatePayment(customerId, amount) {
-      // 🔵 Knowledge of Stripe's public API lives HERE, not in the Workflow
-      const intent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100),
-        currency: "usd",
-        customer: customerId,
-      });
+    async validatePayment(orderId, customerId, amount) {
+      // 🔵 Knowledge of Stripe's public API lives HERE, not in the Workflow.
+      // Temporal retries this Activity, so the charge must be idempotent:
+      // Stripe replays the first result for a repeated idempotency key.
+      const intent = await stripe.paymentIntents.create(
+        {
+          amount: Math.round(amount * 100),
+          currency: "usd",
+          customer: customerId,
+          confirm: true, // otherwise the intent waits for a payment method
+          off_session: true,
+        },
+        { idempotencyKey: `pay-${orderId}` },
+      );
+      if (intent.status !== "succeeded") {
+        throw new Error(`Payment ${intent.status}: ${intent.last_payment_error?.message}`);
+      }
       return intent.id;
     },
 
-    async reserveInventory(productId, qty) {
-      // Schema knowledge lives HERE, not in the Workflow
-      const updated = await db.query(
-        `UPDATE inventory SET reserved = reserved + $1
-         WHERE product_id = $2 AND available - reserved >= $1`,
-        [qty, productId],
-      );
-      if (updated.rowCount === 0) throw new Error("Insufficient inventory");
-      const reservation = await db.query(
-        `INSERT INTO reservations (product_id, qty) VALUES ($1, $2)
-         RETURNING reservation_id`,
-        [productId, qty],
-      );
-      return reservation.rows[0].reservation_id;
+    async reserveInventory(orderId, productId, qty) {
+      // Schema knowledge lives HERE, not in the Workflow.
+      // Idempotent: the reservation id is the order id. A retried attempt
+      // finds the existing row and does not touch stock again.
+      const client = await db.connect();
+      try {
+        await client.query("BEGIN");
+        const existing = await client.query(
+          `SELECT 1 FROM reservations WHERE reservation_id = $1`,
+          [orderId],
+        );
+        if (existing.rowCount) {
+          await client.query("COMMIT");
+          return orderId;
+        }
+        const updated = await client.query(
+          `UPDATE inventory SET reserved = reserved + $1
+           WHERE product_id = $2 AND available - reserved >= $1`,
+          [qty, productId],
+        );
+        if (updated.rowCount === 0) throw new Error("Insufficient inventory");
+        await client.query(
+          `INSERT INTO reservations (reservation_id, product_id, qty, status)
+           VALUES ($1, $2, $3, 'held')`,
+          [orderId, productId, qty],
+        );
+        await client.query("COMMIT");
+        return orderId;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     },
 
     async createShipment(address, reservationId) {
@@ -255,14 +285,23 @@ export function createOrderActivities(
     },
 
     async refundPayment(paymentId) {
-      await stripe.refunds.create({ payment_intent: paymentId });
+      await stripe.refunds.create(
+        { payment_intent: paymentId },
+        { idempotencyKey: `refund-${paymentId}` },
+      );
     },
 
     async releaseInventory(reservationId) {
+      // One-time transition: a second attempt matches no 'held' row and
+      // changes nothing.
       await db.query(
-        `UPDATE inventory i SET reserved = i.reserved - r.qty
-         FROM reservations r
-         WHERE r.reservation_id = $1 AND i.product_id = r.product_id`,
+        `WITH released AS (
+           UPDATE reservations SET status = 'released'
+           WHERE reservation_id = $1 AND status = 'held'
+           RETURNING product_id, qty)
+         UPDATE inventory i SET reserved = i.reserved - r.qty
+         FROM released r
+         WHERE i.product_id = r.product_id`,
         [reservationId],
       );
     },
@@ -278,7 +317,7 @@ export function createOrderActivities(
 | Activity → Stripe API       | 🔵 Contract (public, versioned API)                    | 🔴 High (external vendor)                            | 🟡 Medium (the vendor evolves its API) |
 | Activity → inventory tables | Not cross-component: the tables belong to this service | 🟡 Medium (network)                                  | 🔴 High (core inventory rules change)  |
 
-Every external dependency is Contract coupling at high distance, which the [balance formula](coupling-dimensions.md#reading-the-analysis-tables) accepts. The Activity boundary keeps that knowledge in one place. The Workflow depends only on the Activity signature, so a Stripe API change or a schema migration is absorbed inside one Activity and never reaches the orchestration logic. Reading another service's tables from an Activity would be Intrusive coupling; the boundary does not change that, it only contains it.
+Every external dependency is Contract coupling at high distance, which the [balance formula](coupling-dimensions.md#reading-the-analysis-tables) accepts. The Activity boundary keeps that knowledge in one place, and it is also where idempotency lives: each Activity above is safe to run twice, because Temporal will. The Workflow depends only on the Activity signature, so a Stripe API change or a schema migration is absorbed inside one Activity and never reaches the orchestration logic. Reading another service's tables from an Activity would be Intrusive coupling; the boundary does not change that, it only contains it.
 
 ### Signals, Queries, and Updates: The Message Boundary
 
@@ -553,22 +592,24 @@ const activities = proxyActivities<OrderActivities>({
 
 export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
   // Compensation stack — clean, co-located, readable
-  const compensations: Array<() => Promise<void>> = [];
+  const compensations: Array<[name: string, run: () => Promise<void>]> = [];
 
   try {
     // Step 1: Payment
     const paymentId = await activities.validatePayment(
+      order.id,
       order.customerId,
       order.total,
     );
-    compensations.push(() => activities.refundPayment(paymentId));
+    compensations.push(["refundPayment", () => activities.refundPayment(paymentId)]);
 
     // Step 2: Inventory
     const reservationId = await activities.reserveInventory(
+      order.id,
       order.productId,
       order.quantity,
     );
-    compensations.push(() => activities.releaseInventory(reservationId));
+    compensations.push(["releaseInventory", () => activities.releaseInventory(reservationId)]);
 
     // Step 3: Shipment
     const shipmentId = await activities.createShipment(
@@ -578,22 +619,28 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 
     return { status: "confirmed", paymentId, reservationId, shipmentId };
   } catch (err) {
-    // Compensate in reverse order. Each compensation is an Activity with its own
-    // retry policy; if one exhausts its retries the failure is recorded in the
-    // Event History and the remaining compensations still run.
-    for (const compensate of compensations.reverse()) {
+    // Compensate in reverse order. Each compensation is an Activity with its
+    // own retry policy. One that exhausts its retries must not stop the rest,
+    // and must not be forgotten: it is named in the Workflow failure so an
+    // operator or a follow-up Workflow can finish it.
+    const unfinished: string[] = [];
+    for (const [name, compensate] of compensations.reverse()) {
       try {
         await compensate();
       } catch {
-        // visible in the Event History; nothing else to do here
+        unfinished.push(name);
       }
     }
     throw ApplicationFailure.nonRetryable(
       `Order failed: ${err instanceof Error ? err.message : "unknown"}`,
+      "OrderFailed",
+      { unfinishedCompensations: unfinished },
     );
   }
 }
 ```
+
+A refund that still fails after its retries is a money problem, not a logging problem. The `unfinishedCompensations` detail is the durable record; what acts on it (an alert, a Signal to an operator Workflow, a scheduled retry) is a design decision this example leaves to you.
 
 **What disappeared:**
 
@@ -602,7 +649,7 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 | State DB schema and queries         | Temporal's Event History replaces your state store                |
 | Custom retry logic                  | `retry` policy in `proxyActivities` config                        |
 | Event bus and handlers              | Direct Activity calls — Temporal handles the dispatch             |
-| Dead letter queue                   | Failed Workflows are visible in the Temporal UI with full history |
+| Dead letter queue                   | A failed Workflow carries its history and the names of unfinished compensations. Something still has to act on them |
 | Separate compensation orchestration | Compensation stack lives in the same function as the forward path |
 
 **What remains:**
@@ -736,7 +783,7 @@ flowchart TB
     style BadCoupling fill:#e9ecef,stroke:#333
 ```
 
-Determinism is a forcing function. Every I/O has to go through an Activity, so the Workflow cannot reach into another service's database the way the [intrusive examples](coupling-dimensions.md#level-1-intrusive-coupling-🔴-highest-risk) do. It does not stop an Activity from doing so; it moves the decision to one visible place.
+Determinism is a forcing function. Every I/O has to go through an Activity, so the Workflow cannot reach into another service's database the way the [intrusive examples](coupling-dimensions.md#level-1-intrusive-coupling--highest-risk) do. It does not stop an Activity from doing so; it moves the decision to one visible place.
 
 This is the same move pure functional programming makes by pushing side effects to the edges. The cost is that developers have to learn what belongs in a Workflow and what belongs in an Activity.
 

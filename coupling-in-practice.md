@@ -1149,7 +1149,7 @@ export class Order {
   private constructor(
     public readonly id: string,
     public readonly customerId: string,
-    private items: OrderItem[],
+    private _items: OrderItem[],
     private _status: OrderStatus,
   ) {}
 
@@ -1169,7 +1169,11 @@ export class Order {
   }
 
   get total(): number {
-    return this.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    return this._items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  }
+
+  get items(): readonly OrderItem[] {
+    return this._items;
   }
 
   confirm(): void {
@@ -1252,12 +1256,8 @@ import { OrderRepository } from "../domain/ports/outbound";
 import { Order } from "../domain/entities/order";
 import { Pool } from "pg";
 
-type OrderRow = {
-  id: string;
-  customer_id: string;
-  status: OrderStatus;
-  items?: OrderItem[];
-};
+type OrderRow = { id: string; customer_id: string; status: OrderStatus };
+type ItemRow = { product_id: string; price: number; quantity: number };
 
 export class PostgresOrderRepository implements OrderRepository {
   constructor(private pool: Pool) {}
@@ -1267,18 +1267,34 @@ export class PostgresOrderRepository implements OrderRepository {
       "INSERT INTO orders (id, customer_id, total, status) VALUES ($1, $2, $3, $4)",
       [order.id, order.customerId, order.total, order.status],
     );
+    for (const item of order.items) {
+      await this.pool.query(
+        "INSERT INTO order_items (order_id, product_id, price, quantity) VALUES ($1, $2, $3, $4)",
+        [order.id, item.productId, item.price, item.quantity],
+      );
+    }
   }
 
   async findById(id: string): Promise<Order | null> {
-    const result = await this.pool.query("SELECT * FROM orders WHERE id = $1", [
-      id,
-    ]);
-    return result.rows[0] ? this.toDomain(result.rows[0]) : null;
+    const order = await this.pool.query<OrderRow>(
+      "SELECT id, customer_id, status FROM orders WHERE id = $1",
+      [id],
+    );
+    if (!order.rows[0]) return null;
+    const items = await this.pool.query<ItemRow>(
+      "SELECT product_id, price, quantity FROM order_items WHERE order_id = $1",
+      [id],
+    );
+    return this.toDomain(order.rows[0], items.rows);
   }
 
-  private toDomain(row: OrderRow): Order {
-    // items come from an order_items join in a real mapper
-    return Order.rehydrate(row.id, row.customer_id, row.items ?? [], row.status);
+  private toDomain(row: OrderRow, items: ItemRow[]): Order {
+    return Order.rehydrate(
+      row.id,
+      row.customer_id,
+      items.map((i) => ({ productId: i.product_id, price: i.price, quantity: i.quantity })),
+      row.status,
+    );
   }
 }
 
