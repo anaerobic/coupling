@@ -991,7 +991,7 @@ flowchart TD
 
 ### Reading the Analysis Tables
 
-Every coupling-analysis table in this guide ends with a verdict row. The verdict applies the binary balance formula from the [main guide](README.md#balance-the-key-insight): `BALANCE = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY`. This guide's convention for the binary form: Intrusive and Functional count as high strength, Model and Contract as low; anything across a process boundary counts as high distance. A ✅ verdict means the formula holds, and the row says which term made it hold.
+Every coupling-analysis table in this guide ends with a verdict row. The verdict applies the binary balance formula from the [main guide](README.md#balance-the-key-insight): `BALANCE = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY`. This guide's convention for the binary form: only Contract counts as low strength (Intrusive, Functional, and Model all count as high), and anything across a process boundary counts as high distance. Model coupling inside one service is therefore high cohesion, while the same shared model across services is complexity, which matches the shared-library scenario in [Coupling in Practice](coupling-in-practice.md#scenario-3-shared-library-hell). A ✅ verdict means the formula holds, and the row says which term made it hold.
 
 ---
 
