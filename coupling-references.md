@@ -44,7 +44,8 @@
 
 - **[Understanding Temporal](https://docs.temporal.io/evaluate/understanding-temporal)** — Core concepts: Durable Execution, Workflows, Activities, Workers, Event History.
 - **[Temporal Use Cases & Design Patterns](https://docs.temporal.io/evaluate/use-cases-design-patterns)** — Production use cases (transactions, business processes, AI agents) and patterns (Saga, State Machine).
-- **[Temporal Decision Framework](https://kawofong.github.io/temporal-platform-hub/decision-framework)** — When to use (and not use) Temporal, good/bad use case criteria.
+- **[Workflow Versioning (TypeScript)](https://docs.temporal.io/develop/typescript/versioning)** — Changing Workflow code without breaking running executions.
+- **[Continue-As-New (TypeScript)](https://docs.temporal.io/develop/typescript/continue-as-new)** — Keeping long-running Workflows under the Event History limits.
 - **[Saga Pattern with Temporal Whitepaper](https://pages.temporal.io/download-saga-pattern-made-easy)** — Detailed treatment of the Saga pattern in durable execution.
 - **[To Choreograph or Orchestrate Your Saga](https://temporal.io/blog/to-choreograph-or-orchestrate-your-saga-that-is-the-question)** — Temporal blog on saga topology tradeoffs.
 - **[An Epic Saga in Distributed Transactions](https://medium.com/better-programming/distributed-transactions-in-depth-f900875bbf6)** — Erik Ralston. The Three C's (Communication, Consistency, Coordination) applied to saga topology, from _Software Architecture: The Hard Parts_.
@@ -65,6 +66,7 @@
 - [Afferent/Efferent Coupling](https://coupling.dev/posts/related-topics/afferent-and-efferent-coupling/)
 - [Domain-Driven Design](https://coupling.dev/posts/related-topics/domain-driven-design/)
 - [Cynefin](https://coupling.dev/posts/related-topics/cynefin/)
+- [Wardley Maps](https://coupling.dev/posts/related-topics/wardley-maps/)
 
 ### Wikipedia
 
@@ -173,9 +175,10 @@ Check the [coupling.dev podcasts page](https://coupling.dev/posts/learning-resou
 | **Bounded Context**                      | A DDD concept — a boundary within which a domain model is consistent                                   |
 | **Anti-Corruption Layer (ACL)**          | A translation layer that prevents one model from leaking into another                                  |
 | **Dependency Inversion Principle (DIP)** | High-level modules should not depend on low-level modules; both should depend on abstractions          |
-| **Distributed Monolith**                 | A system with separately deployed services that are tightly coupled (worst of both worlds)             |
-| **Temporal Coupling**                    | Components must be available at the same time for the system to work                                   |
-| **Lifecycle Coupling**                   | Components must be built, tested, and deployed together                                                |
+| **Distributed Monolith**                 | Separately deployed services with high integration strength: the coordination cost of distance without the independence |
+| **Temporal Coupling**                    | Components must be available at the same time for an interaction to succeed (a synchronous call)       |
+| **Lifecycle Coupling**                   | Components must be built, tested, and deployed together; falls as distance rises                       |
+| **Runtime Coupling**                     | Any dependency between components while the system runs (availability, ordering, latency); an input to distance |
 | **Saga**                                 | A pattern for managing distributed transactions via a sequence of local transactions and compensations |
 | **Durable Execution**                    | A platform-managed guarantee that code runs to completion despite failures — state is persisted and replayed automatically (e.g. [Temporal](https://docs.temporal.io/evaluate/understanding-temporal)) |
 | **Workflow (Temporal)**                  | Deterministic business logic that orchestrates Activities, Signals, and Child Workflows with automatic state persistence |

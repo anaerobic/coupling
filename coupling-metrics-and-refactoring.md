@@ -61,8 +61,12 @@ $$I = \frac{C_e}{C_a + C_e}$$
 
 **ELI5:** Instability is like asking _"How easy is it for this thing to change?"_
 
-- A league rulebook (**I = 0, stable**) is hard to change mid-season — every team, coach, and referee depends on it.
-- A bench player's warm-up routine (**I = 1, unstable**) can change anytime — nobody depends on it, but it still has to adapt to team tactics and game rules.
+- A league rulebook (**I = 0, stable**) is hard to change mid-season. Every team, coach, and referee depends on it.
+- A bench player's warm-up routine (**I = 1, unstable**) can change anytime. Nobody depends on it, but it still has to adapt to team tactics and game rules.
+
+#### Instability Is Not Volatility
+
+The two words collide across this guide. **Instability (I)** is a structural ratio: how many things depend on you versus how many you depend on. It says how _hard_ a change would be to absorb. **Volatility**, in [Khononov's model](coupling-dimensions.md#3-volatility), is how _likely_ a component is to change, driven by its business domain. A core subdomain is highly volatile by definition, and the DIP walkthrough below argues the layers users depend on should also be highly stable (I near 0). There is no contradiction: the point of the refactoring is that the component most likely to change is the one whose changes cascade least. Read "stable" in this document as low I, and "volatile" as a high rate of change.
 
 ### Abstractness (A)
 
@@ -218,9 +222,9 @@ flowchart TB
 
 **Problems:**
 
-1. **Presentation** has I=0.50 — it's not stable enough. If Domain changes, Presentation might break. But Presentation is what users see!
-2. **Infrastructure** has I=0.00 — it's _too_ stable. Everyone adapts to infrastructure instead of infrastructure adapting to the application.
-3. **Domain** references _both_ directions — circular dependency with Presentation.
+1. **Presentation** has I=0.50. It is not stable enough: if Domain changes, Presentation might break, and Presentation is what users see.
+2. **Infrastructure** has I=0.00. It is _too_ stable: everyone adapts to infrastructure instead of infrastructure adapting to the application.
+3. **Domain** references _both_ directions, a circular dependency with Presentation.
 
 ### Step 2: Apply Dependency Inversion Principle (DIP)
 
@@ -572,15 +576,15 @@ flowchart TB
 
 **What changed:**
 
-- **Presentation** is now absolutely stable (I=0.00) — nobody depends on anything outside Presentation. ✅
-- **Infrastructure** is now absolutely unstable (I=1.00) — it adapts to Domain's contracts. ✅
-- **Dependencies flow upward** — lower layers depend on upper layers through interfaces. ✅
+- **Presentation** is now absolutely stable (I=0.00). Nothing in Presentation depends on anything outside it. ✅
+- **Infrastructure** is now absolutely unstable (I=1.00). It adapts to Domain's contracts. ✅
+- **Dependencies flow upward.** Lower layers depend on upper layers through interfaces. ✅
 
 ---
 
 ## ⚠️ The Alternative View: When Metrics Mislead
 
-Oliver Drotbohm raises a critical counterpoint in [The Instability-Abstractness-Relationship — An Alternative View](https://odrotbohm.de/2024/09/the-instability-abstractness-relationsship-an-alternative-view/) that every team should understand.
+Oliver Drotbohm raises a counterpoint in [The Instability-Abstractness-Relationship — An Alternative View](https://odrotbohm.de/2024/09/the-instability-abstractness-relationsship-an-alternative-view/).
 
 ### The Problem with Abstractness-as-a-Metric
 
@@ -611,7 +615,7 @@ flowchart LR
 
 > **Just because you extract an interface from a class doesn't make the package more abstract in any meaningful way.**
 >
-> The interface `IUserRepository` has the same _semantic level_ as `UserRepository`. If `UserRepository`'s contract changes, `IUserRepository` must change too. You haven't reduced coupling — you've just added a level of indirection.
+> The interface `IUserRepository` has the same _semantic level_ as `UserRepository`. If `UserRepository`'s contract changes, `IUserRepository` must change too. You have added a level of indirection, not reduced coupling.
 
 ### When Are Interfaces Actually Useful?
 
@@ -742,7 +746,6 @@ module.exports = {
 Tools:
 
 - **[NDepend](https://www.ndepend.com/)** — comprehensive code analysis with coupling metrics
-- **[Microsoft.DependencyAnalysis](https://learn.microsoft.com/en-us/dotnet/architecture/)** — built-in architecture analysis
 - **[ArchUnitNET](https://github.com/TNG/ArchUnitNET)** — architecture tests in code
 
 ```csharp
@@ -768,13 +771,13 @@ public class ArchitectureTests
     }
 
     [TestMethod]
-    public void Infrastructure_Should_Only_Depend_On_Domain_Interfaces()
+    public void Infrastructure_Should_Not_Depend_On_Presentation()
     {
+        // Infrastructure implements Domain's ports; it must never reach past Domain
         IArchRule rule = Types()
             .That().ResideInNamespace("Infrastructure")
-            .Should().OnlyDependOnTypesThat()
-            .ResideInNamespace("Domain")
-            .OrShould().BeInterfaces();
+            .Should().NotDependOnAnyTypesThat()
+            .ResideInNamespace("Presentation");
 
         rule.Check(Architecture);
     }
@@ -806,8 +809,9 @@ public class ArchitectureTest {
             .layer("Domain").definedBy("com.example.domain..")
             .layer("Infrastructure").definedBy("com.example.infrastructure..")
 
-            .whereLayer("Presentation").mayNotBeAccessedByAnyLayer()
-            .whereLayer("Domain").mayOnlyBeAccessedByLayers("Presentation", "Infrastructure")
+            // After DIP the dependencies point upward: Infrastructure -> Domain -> Presentation
+            .whereLayer("Presentation").mayOnlyBeAccessedByLayers("Domain")
+            .whereLayer("Domain").mayOnlyBeAccessedByLayers("Infrastructure")
             .whereLayer("Infrastructure").mayNotBeAccessedByAnyLayer()
 
             .check(new ClassFileImporter().importPackages("com.example"));
@@ -837,8 +841,8 @@ Tools:
 # Visualize module dependency graph
 pydeps src/myapp --cluster --max-bacon=2
 
-# Check for circular imports
-pydeps src/myapp --no-show --no-output --log ERROR 2>&1 | grep "circular"
+# Show only the modules that participate in import cycles
+pydeps src/myapp --show-cycles
 
 # Measure cyclomatic complexity across the project
 radon cc src/ -a -nc
@@ -857,13 +861,16 @@ type = "forbidden"
 source_modules = ["myapp.domain"]
 forbidden_modules = ["myapp.infrastructure"]
 
+# Layers are listed from higher to lower; a higher layer may import a lower one,
+# never the reverse. After DIP, Infrastructure imports Domain and Domain imports
+# Presentation, so Infrastructure is the top of this list.
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
 layers = [
-    "myapp.presentation",
-    "myapp.domain",
     "myapp.infrastructure",
+    "myapp.domain",
+    "myapp.presentation",
 ]
 ```
 
@@ -907,10 +914,10 @@ def test_infrastructure_depends_on_domain():
 ### Key takeaways:
 
 1. **Metrics are a compass, not a GPS.** They point you in the right direction, but don't blindly follow them.
-2. **Use DIP to invert dependency directions** — make lower layers depend on upper layers through interfaces.
+2. **Use DIP to invert dependency directions.** Make lower layers depend on upper layers through interfaces.
 3. **Don't add interfaces just to improve the abstractness metric.** Add them when they provide genuine abstraction.
 4. **Enforce coupling rules as automated tests** using ArchUnit (Java), ArchUnitNET (C#), dependency-cruiser (TypeScript), or import-linter / pytest-archon (Python).
-5. **Measure, refactor, measure again** — use the before/after comparison to validate that your refactoring actually improved things.
+5. **Measure, refactor, measure again.** The before/after comparison shows whether the refactoring improved anything.
 
 ---
 

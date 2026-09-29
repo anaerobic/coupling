@@ -2,11 +2,7 @@
 
 [← Back to Main Guide](README.md) | [← Three C's of Distributed Transactions](three-cs-distributed-transactions.md) | [Next: References →](coupling-references.md)
 
-> _"Temporal simplifies state management and developers don't have to write tons of_
-> _extra code to handle every possible thing that could go wrong."_
-> — [Temporal Documentation](https://docs.temporal.io/evaluate/understanding-temporal)
-
-Durable execution platforms like [Temporal](https://docs.temporal.io/evaluate/understanding-temporal) fundamentally reshape how coupling manifests in distributed systems. By absorbing failure handling, state persistence, and retry logic into the platform, they eliminate entire categories of accidental coupling — but they also introduce new coupling dimensions that must be understood and balanced.
+Durable execution platforms like [Temporal](https://docs.temporal.io/evaluate/understanding-temporal) change where coupling shows up in a distributed system. The platform takes over failure handling, state persistence, and retries, which removes several kinds of accidental coupling. It adds platform coupling of its own, and that has to be balanced too.
 
 This guide analyzes durable execution and orchestration **through the lens of the three coupling dimensions** (Integration Strength, Distance, Volatility), shows how Temporal's primitives create coupling boundaries, and examines the tradeoffs teams must negotiate when adopting workflow orchestration.
 
@@ -26,6 +22,7 @@ This guide analyzes durable execution and orchestration **through the lens of th
 - [Coupling Tradeoffs Temporal Introduces](#coupling-tradeoffs-temporal-introduces)
   - [Platform Coupling](#platform-coupling)
   - [Deterministic Constraints](#deterministic-constraints)
+  - [Event History Limits and Versioning](#event-history-limits-and-versioning)
   - [Worker Architecture and Deployment Coupling](#worker-architecture-and-deployment-coupling)
 - [Use Case Decision Framework Through a Coupling Lens](#use-case-decision-framework-through-a-coupling-lens)
   - [When Temporal Reduces Net Coupling](#when-temporal-reduces-net-coupling)
@@ -37,14 +34,14 @@ This guide analyzes durable execution and orchestration **through the lens of th
 
 ## Overview: The Coupling Problem Temporal Solves
 
-In [Scenario 4 of Coupling in Practice](coupling-in-practice.md#scenario-4-temporal-coupling-in-synchronous-calls), we saw how synchronous service-to-service calls create **temporal coupling** — both services must be available at the same time. The hand-rolled solution was a saga orchestrator with an event bus. It works, but it forces developers to manage:
+In [Scenario 4 of Coupling in Practice](coupling-in-practice.md#scenario-4-temporal-coupling-in-synchronous-calls), synchronous service-to-service calls create [**temporal coupling**](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling): both services must be available at the same time. The hand-rolled solution was a saga orchestrator with an event bus. It works, but it forces developers to manage:
 
-1. **State persistence** — tracking where the process is and what has completed
-2. **Retry logic** — deciding when, how often, and with what backoff to retry
-3. **Compensation** — rolling back completed steps when a later step fails
-4. **Timeout management** — detecting hung operations and acting on them
-5. **Idempotency** — ensuring retried operations don't cause duplicate effects
-6. **Visibility** — understanding what's happening in a running process
+1. **State persistence**: tracking where the process is and what has completed
+2. **Retry logic**: deciding when, how often, and with what backoff to retry
+3. **Compensation**: rolling back completed steps when a later step fails
+4. **Timeout management**: detecting hung operations and acting on them
+5. **Idempotency**: ensuring retried operations don't cause duplicate effects
+6. **Visibility**: understanding what's happening in a running process
 
 Each of these concerns creates its own coupling surface. State persistence couples you to a database schema. Retry logic duplicates across services. Compensation logic must mirror the forward logic. Timeout values are scattered across configuration files.
 
@@ -59,15 +56,17 @@ mindmap
       Idempotency plumbing
       Observability instrumentation
     With Durable Execution
-      Platform absorbs infrastructure concerns
-      Developer focuses on business logic
+      Platform absorbs state, retries, timeouts, visibility
+      Idempotency remains the developer's job
       New tradeoffs emerge
         Platform coupling
         Deterministic constraints
         Worker topology
 ```
 
-**Temporal absorbs concerns 1–6 into the platform.** The Temporal Service maintains a durable [Event History](https://docs.temporal.io/encyclopedia/event-history) — a complete log of every step in a Workflow Execution. If a Worker crashes, it replays from the Event History and resumes from the point of failure. Retries, timeouts, and heartbeats are configuration, not code.
+**Temporal absorbs concerns 1 to 4 and 6.** The Temporal Service maintains a durable [Event History](https://docs.temporal.io/encyclopedia/event-history), a complete log of every step in a Workflow Execution. If a Worker crashes, a Worker replays the Event History and resumes from the point of failure. Retries, timeouts, and heartbeats are configuration, not code.
+
+**Idempotency stays with you.** Retries are the reason: an Activity attempt that fails after its side effect landed will run again. Temporal's [Activity docs](https://docs.temporal.io/activities) recommend that Activities be idempotent "so retries can be processed without duplicate side effects". The platform gives you the retry; you supply the idempotency key.
 
 ### ELI5: Durable Execution
 
@@ -105,7 +104,7 @@ flowchart LR
 
 ### Workflows: The Orchestration Boundary
 
-A [Temporal Workflow](https://docs.temporal.io/evaluate/understanding-temporal#workflow) is your business logic defined in code — a deterministic function that orchestrates the sequence of steps in a process. The Workflow is the **coupling boundary** between your orchestration logic and the outside world.
+A [Temporal Workflow](https://docs.temporal.io/evaluate/understanding-temporal#workflow) is your business logic defined in code: a deterministic function that orchestrates the sequence of steps in a process. The Workflow is the **coupling boundary** between your orchestration logic and the outside world.
 
 | Coupling Property        | How Workflows Manage It                                                                                                                                    |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -117,13 +116,9 @@ A [Temporal Workflow](https://docs.temporal.io/evaluate/understanding-temporal#w
 
 ```typescript
 // ✅ The Workflow is pure orchestration — it knows WHAT to do, not HOW
-import {
-  proxyActivities,
-  defineSignal,
-  setHandler,
-  condition,
-} from "@temporalio/workflow";
+import { proxyActivities, defineSignal, setHandler } from "@temporalio/workflow";
 import type { OrderActivities } from "./activities";
+import type { OrderRequest, OrderResult } from "./types";
 
 const {
   validatePayment,
@@ -145,16 +140,21 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
     cancelled = true;
   });
 
-  // Step 1: Payment
-  const paymentId = await validatePayment(order.customerId, order.total);
+  // Step 1: Payment. The order id is the idempotency key for the charge.
+  const paymentId = await validatePayment(
+    order.id,
+    order.customerId,
+    order.paymentMethodId,
+    order.total,
+  );
 
   if (cancelled) {
     await refundPayment(paymentId);
     return { status: "cancelled" };
   }
 
-  // Step 2: Inventory
-  const reservationId = await reserveInventory(order.productId, order.quantity);
+  // Step 2: Inventory. The order id is also the reservation id.
+  const reservationId = await reserveInventory(order.id, order.productId, order.quantity);
 
   if (cancelled) {
     await releaseInventory(reservationId);
@@ -162,7 +162,8 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
     return { status: "cancelled" };
   }
 
-  // Step 3: Shipment
+  // Step 3: Shipment. Once the shipment exists the order can no longer be
+  // cancelled, so a Signal arriving after this point is deliberately ignored.
   const shipmentId = await createShipment(order.address, reservationId);
 
   return { status: "confirmed", paymentId, reservationId, shipmentId };
@@ -172,13 +173,14 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 **What's notable from a coupling perspective:**
 
 - The Workflow knows _what_ to do (validate payment → reserve inventory → create shipment) but not _how_ those things happen.
-- Activities are accessed through `proxyActivities` — a contract-based proxy. The Workflow never imports the Activity _implementations_, only their _type signatures_.
+- Activities are accessed through `proxyActivities`, a contract-based proxy. The Workflow never imports the Activity _implementations_, only their _type signatures_.
 - Compensation (refund, release) is co-located with the business logic, not scattered across event handlers.
 - The Signal handler shows contract coupling: external callers know only the signal name and shape, not the Workflow's internal state.
+- This example compensates only on cancellation. If `reserveInventory` or `createShipment` exhausts its retries, the Workflow fails with the payment still taken. The [saga section](#the-saga-pattern-before-and-after-temporal) adds the compensation stack that covers ordinary failures.
 
 ### Activities: The Side-Effect Boundary
 
-[Activities](https://docs.temporal.io/evaluate/understanding-temporal#activities) are the units of work that interact with the outside world — API calls, database writes, file operations. They are the **I/O boundary** that separates deterministic orchestration from non-deterministic side effects.
+[Activities](https://docs.temporal.io/evaluate/understanding-temporal#activities) are the units of work that interact with the outside world: API calls, database writes, file operations. They are the **I/O boundary** that separates deterministic orchestration from non-deterministic side effects.
 
 ```mermaid
 flowchart TB
@@ -202,7 +204,7 @@ flowchart TB
     style nondeterministic fill:#69db7c,color:#000
 ```
 
-This boundary serves the same purpose as the **Ports & Adapters** (hexagonal architecture) pattern — the Workflow is the application core, Activities are the adapters. See [aws-lambda-stream's hexagonal analysis](functional-reactive-coupling.md#hexagonal-architecture-at-nano-micro-and-macro-levels) for how this same principle manifests in event-driven serverless architectures.
+This boundary serves the same purpose as the **Ports & Adapters** (hexagonal architecture) pattern: the Workflow is the application core, Activities are the adapters. See [aws-lambda-stream's hexagonal analysis](functional-reactive-coupling.md#hexagonal-architecture-at-nano-micro-and-macro-levels) for how this same principle manifests in event-driven serverless architectures.
 
 #### TypeScript — Activities as side-effect contracts
 
@@ -212,10 +214,16 @@ This boundary serves the same purpose as the **Ports & Adapters** (hexagonal arc
 
 import { Stripe } from "stripe";
 import { Pool } from "pg";
+import type { Address, ShippingClient } from "./types";
 
 export interface OrderActivities {
-  validatePayment(customerId: string, amount: number): Promise<string>;
-  reserveInventory(productId: string, qty: number): Promise<string>;
+  validatePayment(
+    orderId: string,
+    customerId: string,
+    paymentMethodId: string,
+    amount: number,
+  ): Promise<string>;
+  reserveInventory(orderId: string, productId: string, qty: number): Promise<string>;
   createShipment(address: Address, reservationId: string): Promise<string>;
   refundPayment(paymentId: string): Promise<void>;
   releaseInventory(reservationId: string): Promise<void>;
@@ -227,40 +235,92 @@ export function createOrderActivities(
   shippingApi: ShippingClient,
 ): OrderActivities {
   return {
-    async validatePayment(customerId, amount) {
-      // 🔴 Intrusive knowledge of Stripe's API lives HERE, not in the Workflow
-      const intent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100),
-        currency: "usd",
-        customer: customerId,
-      });
+    async validatePayment(orderId, customerId, paymentMethodId, amount) {
+      // 🔵 Knowledge of Stripe's public API lives HERE, not in the Workflow.
+      // Temporal retries this Activity, so the charge must be idempotent:
+      // Stripe replays the first result for a repeated idempotency key for
+      // at least 24 hours. A retry later than that must look the intent up
+      // by order id before creating another.
+      const intent = await stripe.paymentIntents.create(
+        {
+          amount: Math.round(amount * 100),
+          currency: "usd",
+          customer: customerId,
+          payment_method: paymentMethodId, // the saved method to charge
+          confirm: true, // otherwise the intent waits for confirmation
+          off_session: true,
+        },
+        { idempotencyKey: `pay-${orderId}` },
+      );
+      if (intent.status !== "succeeded") {
+        throw new Error(`Payment ${intent.status}: ${intent.last_payment_error?.message}`);
+      }
       return intent.id;
     },
 
-    async reserveInventory(productId, qty) {
-      // 🔴 Database schema knowledge lives HERE
-      const result = await db.query(
-        `UPDATE inventory SET reserved = reserved + $1
-         WHERE product_id = $2 AND available >= $1
-         RETURNING reservation_id`,
-        [qty, productId],
-      );
-      if (result.rowCount === 0) throw new Error("Insufficient inventory");
-      return result.rows[0].reservation_id;
+    async reserveInventory(orderId, productId, qty) {
+      // Schema knowledge lives HERE, not in the Workflow.
+      // Idempotent: the reservation id is the order id. A retried attempt
+      // finds the existing row and does not touch stock again.
+      const client = await db.connect();
+      try {
+        await client.query("BEGIN");
+        const existing = await client.query(
+          `SELECT 1 FROM reservations WHERE reservation_id = $1`,
+          [orderId],
+        );
+        if (existing.rowCount) {
+          await client.query("COMMIT");
+          return orderId;
+        }
+        const updated = await client.query(
+          `UPDATE inventory SET reserved = reserved + $1
+           WHERE product_id = $2 AND available - reserved >= $1`,
+          [qty, productId],
+        );
+        if (updated.rowCount === 0) throw new Error("Insufficient inventory");
+        await client.query(
+          `INSERT INTO reservations (reservation_id, product_id, qty, status)
+           VALUES ($1, $2, $3, 'held')`,
+          [orderId, productId, qty],
+        );
+        await client.query("COMMIT");
+        return orderId;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     },
 
     async createShipment(address, reservationId) {
-      return shippingApi.create({ address, reservationId });
+      // The reservation id doubles as the shipment's idempotency key, so a
+      // retried attempt gets the shipment already created, not a second one
+      return shippingApi.create(
+        { address, reservationId },
+        { idempotencyKey: `ship-${reservationId}` },
+      );
     },
 
     async refundPayment(paymentId) {
-      await stripe.refunds.create({ payment_intent: paymentId });
+      await stripe.refunds.create(
+        { payment_intent: paymentId },
+        { idempotencyKey: `refund-${paymentId}` },
+      );
     },
 
     async releaseInventory(reservationId) {
+      // One-time transition: a second attempt matches no 'held' row and
+      // changes nothing.
       await db.query(
-        `UPDATE inventory SET reserved = reserved - qty
-         FROM reservations WHERE reservation_id = $1`,
+        `WITH released AS (
+           UPDATE reservations SET status = 'released'
+           WHERE reservation_id = $1 AND status = 'held'
+           RETURNING product_id, qty)
+         UPDATE inventory i SET reserved = i.reserved - r.qty
+         FROM released r
+         WHERE i.product_id = r.product_id`,
         [reservationId],
       );
     },
@@ -270,17 +330,17 @@ export function createOrderActivities(
 
 **Coupling analysis of the Activity boundary:**
 
-| Component             | Integration Strength                  | Distance                                             | Volatility                       |
-| --------------------- | ------------------------------------- | ---------------------------------------------------- | -------------------------------- |
-| Workflow → Activity   | 🔵 Contract (function signature only) | 🟡 Medium (same Worker process or different Workers) | 🟢 Low (interface is stable)     |
-| Activity → Stripe API | 🔴 Intrusive (Stripe SDK internals)   | 🔴 High (external service)                           | 🟡 Medium (Stripe API versioned) |
-| Activity → Database   | 🔴 Intrusive (SQL schema)             | 🟡 Medium (network)                                  | 🟡 Medium                        |
+| Component                   | Integration Strength                                   | Distance                                             | Volatility of the target               |
+| --------------------------- | ------------------------------------------------------ | ---------------------------------------------------- | -------------------------------------- |
+| Workflow → Activity         | 🔵 Contract (function signature only)                  | 🟡 Medium (same Worker process or different Workers) | 🟢 Low (the signature rarely changes)  |
+| Activity → Stripe API       | 🔵 Contract (public, versioned API)                    | 🔴 High (external vendor)                            | 🟡 Medium (the vendor evolves its API) |
+| Activity → inventory tables | Not cross-component: the tables belong to this service | 🟡 Medium (network)                                  | 🔴 High (core inventory rules change)  |
 
-The Activity boundary ensures that intrusive coupling to external systems (Stripe, databases, APIs) is **contained within the Activity implementation** and never leaks into the Workflow. This is precisely the balance described in the [coupling dimensions guide](coupling-dimensions.md): high integration strength paired with low distance (within the Activity), keeping complexity contained.
+Every external dependency is Contract coupling at high distance, which the [balance formula](coupling-dimensions.md#reading-the-analysis-tables) accepts. The Activity boundary keeps that knowledge in one place, and it is also where idempotency lives: Temporal will run an Activity twice, so each one above is written to tolerate that, within the limits of its dependency (Stripe keeps an idempotency key for at least 24 hours; the database rows are permanent). The Workflow depends only on the Activity signature, so a Stripe API change or a schema migration is absorbed inside one Activity and never reaches the orchestration logic. Reading another service's tables from an Activity would be Intrusive coupling; the boundary does not change that, it only contains it.
 
 ### Signals, Queries, and Updates: The Message Boundary
 
-Temporal Workflows support three types of [messages](https://docs.temporal.io/encyclopedia/workflow-message-passing) — each with different coupling characteristics:
+Temporal Workflows support three types of [messages](https://docs.temporal.io/encyclopedia/workflow-message-passing), each with different coupling characteristics:
 
 ```mermaid
 flowchart LR
@@ -299,7 +359,7 @@ flowchart LR
         direction TB
         QC["🔵 Contract<br/>Lowest coupling"]
         SC["🔵 Contract<br/>No temporal coupling"]
-        UC["🟢 Model<br/>Caller waits for result"]
+        UC["🔵 Contract<br/>Temporal coupling: caller waits"]
     end
 
     Q --- QC
@@ -308,20 +368,20 @@ flowchart LR
 
     style QC fill:#4dabf7,color:#fff
     style SC fill:#4dabf7,color:#fff
-    style UC fill:#69db7c,color:#fff
+    style UC fill:#4dabf7,color:#fff
 ```
 
 | Message Type | Coupling Strength                                                   | Temporal Coupling                                  | Best For                                          |
 | ------------ | ------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
 | **Query**    | 🔵 Contract — caller knows only the query name and return type      | None — queries don't block the Workflow            | Read-only status checks, progress reporting       |
 | **Signal**   | 🔵 Contract — caller knows only the signal name and payload shape   | None — fire and forget, caller doesn't wait        | External events, approval webhooks, cancellations |
-| **Update**   | 🟢 Model — caller waits for a result, creating synchronous coupling | Present — caller blocks until the Update completes | Operations that need validation or a response     |
+| **Update**   | 🔵 Contract — caller knows the update name, arguments, and return type | Present — caller blocks until the Update completes | Operations that need validation or a response     |
 
-**The coupling insight:** Signals are to Updates what text messages are to phone calls (see the [ELI5 in Coupling in Practice](coupling-in-practice.md#eli5-3)). Prefer Signals for write operations where the caller doesn't need an immediate response — they eliminate temporal coupling between the sender and the Workflow.
+All three are Contract coupling; the caller shares only a name and a payload shape. They differ in temporal coupling. Signals are to Updates what text messages are to phone calls (see the [ELI5 in Coupling in Practice](coupling-in-practice.md#eli5-3)). Prefer Signals for writes where the caller does not need an immediate response.
 
 ### Child Workflows and Distance
 
-[Child Workflows](https://docs.temporal.io/develop/go/child-workflows) manage the **distance** dimension. When a Workflow orchestrates a sub-process, a Child Workflow creates a clean boundary:
+[Child Workflows](https://docs.temporal.io/develop/typescript/child-workflows) manage the **distance** dimension. When a Workflow orchestrates a sub-process, a Child Workflow creates a clean boundary:
 
 ```mermaid
 flowchart TD
@@ -383,12 +443,13 @@ flowchart LR
 
 | Dimension                 | Synchronous Chain                                                                                      | Hand-Rolled Saga                                                                             | Temporal Workflow                                                                                  |
 | ------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Integration Strength**  | 🔴 Intrusive — services know each other's HTTP APIs, error formats, and domain models                  | 🟠 Functional — orchestrator embeds retry/compensation logic; event bus shares event schemas | 🔵 Contract — Workflow knows only Activity function signatures; platform handles retries and state |
-| **Distance**              | 🔴 High — services are separately deployed, yet tightly coupled at runtime                             | 🟡 Medium — event bus introduces async distance, but state DB is shared                      | 🟡 Medium — Activities may be remote, but coupling is to contracts, not implementations            |
-| **Volatility**            | 🔴 High — any change to the chain (new step, changed API) requires coordinated changes across services | 🟡 Medium — new steps require new handlers + orchestrator changes + state schema migration   | 🟢 Low — new steps are new Activity calls in the Workflow; platform manages state                  |
-| **Temporal Coupling**     | 🔴 All services must be running simultaneously                                                         | 🟢 None — async events decouple availability                                                 | 🟢 None — Activities are retried until Workers are available                                       |
-| **Accidental Complexity** | 🔴 Manual rollback, no state tracking, no retry logic                                                  | 🟠 Custom state machine, custom retry, custom dead letter handling                           | 🟢 Platform provides state, retries, timeouts, visibility                                          |
-| **Verdict**               | ❌ Tight coupling across all dimensions                                                                | ⚠️ Better coupling, but high accidental complexity                                           | ✅ Contract coupling with platform-managed complexity                                              |
+| **Integration Strength**  | 🟢 Model — services pass each other's domain models and error shapes over HTTP                          | 🟠 Functional — each compensation handler re-implements the inverse of a forward step; the two must co-evolve | 🔵 Contract — Workflow knows only Activity function signatures                                       |
+| **Distance**              | 🔴 High — separately deployed services                                                                   | 🔴 High — separately deployed handlers behind an event bus                                                    | 🟡 Medium — Activities may run on other Workers, but often in the same deployable                    |
+| **Volatility**            | 🔴 High — the order process is core domain in all three columns                                          | 🔴 High — same process                                                                                        | 🔴 High — same process                                                                               |
+| **Change propagation**    | A new step changes every service in the chain                                                            | A new step means a new handler, an orchestrator change, and a state-schema migration                          | A new step is one more Activity call in the Workflow                                                 |
+| **Temporal Coupling**     | 🔴 All services must be running simultaneously                                                           | 🟢 None — async events decouple availability                                                                  | 🟢 None — Activity Tasks wait in the Task Queue until a Worker polls them                            |
+| **Accidental Complexity** | 🔴 Manual rollback, no state tracking, no retry logic                                                    | 🟠 Custom state machine, custom retry, custom dead letter handling                                             | 🟢 Platform provides state, retries, timeouts, visibility                                            |
+| **Verdict**               | ❌ Model strength at high distance: `STRENGTH XOR DISTANCE` is false                                    | ❌ Functional strength at high distance. Async removed temporal coupling, not the shared knowledge             | ✅ Contract strength: the XOR holds whatever the distance                                            |
 
 ### ELI5: Three Approaches
 
@@ -402,7 +463,7 @@ flowchart LR
 
 ## The Saga Pattern: Before and After Temporal
 
-The [Saga pattern](coupling-references.md#glossary) — a sequence of local transactions with compensating actions on failure — is one of the most important patterns for managing distributed transactions. But implementing sagas from scratch introduces significant coupling overhead.
+The [Saga pattern](coupling-references.md#glossary), a sequence of local transactions with compensating actions on failure, is the standard answer to distributed transactions. Implementing it from scratch brings its own coupling.
 
 ### TypeScript — Before: Hand-rolled saga with scattered compensation
 
@@ -538,6 +599,7 @@ class OrderSagaOrchestrator {
 // ✅ Temporal Workflow — compensation is co-located, retries are configuration
 import { proxyActivities, ApplicationFailure } from "@temporalio/workflow";
 import type { OrderActivities } from "./activities";
+import type { OrderRequest, OrderResult } from "./types";
 
 const activities = proxyActivities<OrderActivities>({
   startToCloseTimeout: "30s",
@@ -550,22 +612,25 @@ const activities = proxyActivities<OrderActivities>({
 
 export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
   // Compensation stack — clean, co-located, readable
-  const compensations: Array<() => Promise<void>> = [];
+  const compensations: Array<[name: string, run: () => Promise<void>]> = [];
 
   try {
     // Step 1: Payment
     const paymentId = await activities.validatePayment(
+      order.id,
       order.customerId,
+      order.paymentMethodId,
       order.total,
     );
-    compensations.push(() => activities.refundPayment(paymentId));
+    compensations.push(["refundPayment", () => activities.refundPayment(paymentId)]);
 
     // Step 2: Inventory
     const reservationId = await activities.reserveInventory(
+      order.id,
       order.productId,
       order.quantity,
     );
-    compensations.push(() => activities.releaseInventory(reservationId));
+    compensations.push(["releaseInventory", () => activities.releaseInventory(reservationId)]);
 
     // Step 3: Shipment
     const shipmentId = await activities.createShipment(
@@ -575,16 +640,28 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 
     return { status: "confirmed", paymentId, reservationId, shipmentId };
   } catch (err) {
-    // Compensate in reverse order — simple, testable, visible
-    for (const compensate of compensations.reverse()) {
-      await compensate(); // Temporal retries each compensation Activity too
+    // Compensate in reverse order. Each compensation is an Activity with its
+    // own retry policy. One that exhausts its retries must not stop the rest,
+    // and must not be forgotten: it is named in the Workflow failure so an
+    // operator or a follow-up Workflow can finish it.
+    const unfinished: string[] = [];
+    for (const [name, compensate] of compensations.reverse()) {
+      try {
+        await compensate();
+      } catch {
+        unfinished.push(name);
+      }
     }
     throw ApplicationFailure.nonRetryable(
       `Order failed: ${err instanceof Error ? err.message : "unknown"}`,
+      "OrderFailed",
+      { unfinishedCompensations: unfinished },
     );
   }
 }
 ```
+
+A refund that still fails after its retries is a money problem, not a logging problem. The `unfinishedCompensations` detail is the durable record; what acts on it (an alert, a Signal to an operator Workflow, a scheduled retry) is a design decision this example leaves to you.
 
 **What disappeared:**
 
@@ -593,10 +670,10 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 | State DB schema and queries         | Temporal's Event History replaces your state store                |
 | Custom retry logic                  | `retry` policy in `proxyActivities` config                        |
 | Event bus and handlers              | Direct Activity calls — Temporal handles the dispatch             |
-| Dead letter queue                   | Failed Workflows are visible in the Temporal UI with full history |
+| Dead letter queue                   | A failed Workflow carries its history and the names of unfinished compensations. Something still has to act on them |
 | Separate compensation orchestration | Compensation stack lives in the same function as the forward path |
 
-**What remains (essential coupling):**
+**What remains:**
 
 | Remaining Coupling           | Why It's Necessary                                                       |
 | ---------------------------- | ------------------------------------------------------------------------ |
@@ -608,7 +685,7 @@ export async function orderWorkflow(order: OrderRequest): Promise<OrderResult> {
 
 ## Where Temporal Sits in the Three C's
 
-The saga pattern isn't a single concept — it has **eight** distinct topologies that differ along three independent dimensions (Communication, Consistency, Coordination). This framework is essential for choosing the right transaction pattern and for understanding which tradeoffs Temporal bakes in. Temporal's architecture makes specific choices for each C, and its design allows flexibility across others:
+The [Three C's](three-cs-distributed-transactions.md) split sagas into eight topologies along Communication, Consistency, and Coordination. Temporal fixes two of the three and leaves one to you:
 
 ```mermaid
 flowchart LR
@@ -633,21 +710,21 @@ flowchart LR
 | ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Communication** | **Async** — Activities are dispatched to Task Queues and executed by Workers | Workers poll the Temporal Service for tasks. The Workflow never makes a synchronous call to another service.                                                                                                                                                        | Activities _can_ make sync calls internally (e.g., HTTP to a payment API), but Workflow ↔ Activity communication is always async.                                                                                                      |
 | **Consistency**   | **Your choice** — Temporal supports both atomic and eventual patterns        | The compensation stack pattern shown in the [Durable Execution guide](durable-execution-orchestration.md#typescript--after-temporal-workflow-with-built-in-saga-support) provides atomic semantics. Dropping the compensation stack gives you eventual consistency. | You decide per-Workflow. Some Workflows need rollback; others just fire-and-forget Activities and accept eventual convergence.                                                                                                         |
-| **Coordination**  | **Orchestrated** — the Workflow _is_ the orchestrator by definition          | Temporal's fundamental primitive is the Workflow: a central, deterministic function that coordinates Activities, Timers, Signals, and Child Workflows.                                                                                                              | If you want choreography, Temporal isn't the right tool — use an event bus (SNS, EventBridge, Kafka). You _can_ combine both: a Temporal Workflow orchestrates one bounded context while communicating with other contexts via events. |
+| **Coordination**  | **Orchestrated** — the Workflow _is_ the orchestrator by definition          | Temporal's core primitive is the Workflow: a central, deterministic function that coordinates Activities, Timers, Signals, and Child Workflows.                                                                                                              | If you want choreography, Temporal isn't the right tool — use an event bus (SNS, EventBridge, Kafka). You _can_ combine both: a Temporal Workflow orchestrates one bounded context while communicating with other contexts via events. |
 
-**With compensation:** Temporal produces **AAO (Fantasy)** sagas — async communication, atomic consistency (compensation stack), orchestrated coordination. This is the "classic saga" pattern, implemented cleanly because the platform handles retries, state persistence, and timeout management.
+**With compensation:** Temporal produces **AAO (Fantasy)** sagas: async communication, atomic consistency through the compensation stack, orchestrated coordination. The platform handles the retries, state, and timeouts that make this pattern painful to hand-roll.
 
-**Without compensation:** Temporal produces **AEO (Parallel)** sagas — async communication, eventual consistency, orchestrated coordination. This is optimal for most use cases: maximum decoupling with centralized visibility and no rollback complexity.
+**Without compensation:** Temporal produces **AEO (Parallel)** sagas: async communication, eventual consistency, orchestrated coordination. Centralized visibility with no rollback logic.
 
-**What Temporal avoids:** Temporal's design makes **Horror (AAC)** impossible by construction — you _cannot_ choreograph an atomic transaction via distributed events within a Temporal Workflow, because the Workflow _is_ the orchestrator. This is a feature, not a limitation. The platform steers you away from the most dangerous saga topology.
+**What Temporal rules out:** a **Horror (AAC)** saga cannot be built inside a Temporal Workflow, because the Workflow _is_ the orchestrator. The platform steers you away from the topology with the most entangled compensation logic.
 
-👉 **[Read the full Three C's guide →](three-cs-distributed-transactions.md)** — covers the Eight Saga Species and practical recommendations.
+👉 **[Read the full Three C's guide →](three-cs-distributed-transactions.md)** for the eight species and the recommendations.
 
 ---
 
 ## Coupling Tradeoffs Temporal Introduces
 
-Temporal doesn't eliminate coupling — it _trades_ accidental coupling for deliberate, well-bounded platform coupling. Understanding these tradeoffs is essential for making an informed architectural decision.
+Temporal trades accidental coupling for deliberate, bounded platform coupling. These are the terms of the trade.
 
 ```mermaid
 flowchart LR
@@ -656,7 +733,7 @@ flowchart LR
         R2["Retry/backoff logic"]
         R3["Compensation orchestration"]
         R4["Timeout management"]
-        R5["Idempotency guards"]
+        R5["Dead-letter handling"]
     end
 
     subgraph introduced ["Coupling INTRODUCED"]
@@ -681,24 +758,24 @@ Adopting Temporal means coupling your orchestration layer to the Temporal SDK an
 
 | Dimension                | Assessment | Rationale                                                                                                                                                                           |
 | ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Integration Strength** | 🟢 Model   | Your Workflows use the SDK's types (`proxyActivities`, `defineSignal`, etc.), but the SDK doesn't reach into your domain. You share the Temporal _model_, not its _implementation_. |
-| **Distance**             | 🟡 Medium  | The Temporal Service is a separate infrastructure component (self-hosted or Cloud), but Workers run in your infrastructure with your code.                                          |
-| **Volatility**           | 🟢 Low     | Temporal's core API is stable and versioned. The Workflow/Activity/Signal primitives have been stable since Temporal's inception. Breaking changes are rare and well-communicated.  |
+| **Integration Strength** | 🔵 Contract | Your Workflows call the SDK's public API (`proxyActivities`, `defineSignal`, and so on). The SDK does not reach into your domain.                                                   |
+| **Distance**             | 🟡 Medium   | The Temporal Service is a separate infrastructure component (self-hosted or Cloud), but Workers run in your infrastructure with your code.                                         |
+| **Volatility**           | 🟢 Low      | The Workflow, Activity, and Signal primitives are versioned public API.                                                                                                             |
 
-**Verdict:** Platform coupling is **model-level coupling at medium distance with low volatility** — a favorable position on the [coupling balance matrix](README.md#balance-the-key-insight). This is comparable to coupling to a database driver or HTTP framework.
+**Verdict:** ✅ Contract coupling at medium distance with low volatility: the XOR holds and low volatility backs it up. This is the same position as coupling to a database driver or HTTP framework.
 
 #### When platform coupling becomes a concern
 
 Platform coupling _does_ become dangerous when:
 
-- **Temporal concepts leak into your domain model** — if your domain entities have `WorkflowId` fields or your APIs expose Temporal-specific types, you've moved from model coupling to functional coupling with the platform.
-- **You build infrastructure abstractions on top of Temporal** — wrapping Temporal in a generic "workflow engine" interface adds a layer without reducing coupling. You're now coupled to both your abstraction _and_ Temporal.
+- **Temporal concepts leak into your domain model.** If your entities carry `WorkflowId` fields or your APIs expose Temporal types, the platform has become part of your domain model, and every consumer of that model now inherits Model coupling to Temporal.
+- **You build infrastructure abstractions on top of Temporal.** Wrapping Temporal in a generic "workflow engine" interface adds a layer without reducing coupling. You are now coupled to both your abstraction _and_ Temporal.
 
 **Mitigation:** Keep Temporal primitives at the orchestration layer. Your domain model, Activities, and external API contracts should be Temporal-unaware. This follows the same principle as keeping ORM types out of your API responses.
 
 ### Deterministic Constraints
 
-Temporal Workflows must be [deterministic](https://docs.temporal.io/develop/) — they cannot call external services directly, generate random numbers, or read the system clock. This is because the Temporal Service replays Workflow code from the Event History to recover state.
+Temporal Workflows must be [deterministic](https://docs.temporal.io/develop/): no direct calls to external services, no random numbers, no system clock. A Worker recovers a Workflow's state by replaying its code against the Event History, so the code has to produce the same commands every time.
 
 ```mermaid
 flowchart TB
@@ -727,9 +804,13 @@ flowchart TB
     style BadCoupling fill:#e9ecef,stroke:#333
 ```
 
-**The coupling insight:** Deterministic constraints are a _forcing function_ for good coupling. They make it **impossible** to create the intrusive coupling patterns shown in [Coupling Dimensions — Level 1: Intrusive Coupling](coupling-dimensions.md#level-1-intrusive-coupling-🔴-highest-risk). You _cannot_ reach into another service's database from a Workflow. You _must_ go through an Activity (a contract boundary).
+Determinism is a forcing function. Every I/O has to go through an Activity, so the Workflow cannot reach into another service's database the way the [intrusive examples](coupling-dimensions.md#level-1-intrusive-coupling--highest-risk) do. It does not stop an Activity from doing so; it moves the decision to one visible place.
 
-This is analogous to how pure functional programming forces side effects to the edges of the program — the constraint is restrictive, but it produces better architecture. The tradeoff is that developers must learn to think in terms of "what goes in the Workflow vs. what goes in an Activity," which has a learning curve.
+This is the same move pure functional programming makes by pushing side effects to the edges. The cost is that developers have to learn what belongs in a Workflow and what belongs in an Activity.
+
+### Event History Limits and Versioning
+
+Two more constraints follow from replay. First, the Event History is finite: the Temporal Service [warns after 10,240 Events and terminates the Workflow Execution past 51,200 Events, 2,000 Updates, or 10,000 Signals](https://docs.temporal.io/workflow-execution/event). A Workflow that loops forever over Activities has to hand off to a fresh execution with [Continue-As-New](https://docs.temporal.io/develop/typescript/continue-as-new). Second, changing Workflow code while executions are in flight breaks replay unless the change is gated with the SDK's [versioning API](https://docs.temporal.io/develop/typescript/versioning) (`patched()` in TypeScript). Both are lifecycle coupling between your code and the platform's persisted state: the history is the shared knowledge, and it outlives any single deploy.
 
 ### Worker Architecture and Deployment Coupling
 
@@ -759,7 +840,7 @@ This mirrors the [service-based architecture vs. microservices](brownfield-strat
 
 ## Use Case Decision Framework Through a Coupling Lens
 
-The [Temporal Decision Framework](https://kawofong.github.io/temporal-platform-hub/decision-framework) provides three questions for evaluating whether Temporal fits a use case. We can map these directly to coupling dimensions:
+Three questions decide whether Temporal fits a use case. Each maps to a coupling dimension:
 
 ```mermaid
 flowchart TD
@@ -774,7 +855,7 @@ flowchart TD
     Q3 -->|"No"| Maybe["⚠️ Maybe — evaluate<br/>platform coupling overhead"]
 
     Q1 -.->|"Maps to"| IS["Integration Strength:<br/>Multiple failure domains =<br/>multiple coupled components"]
-    Q2 -.->|"Maps to"| VOL["Volatility:<br/>Failure recovery = handling<br/>runtime volatility"]
+    Q2 -.->|"Maps to"| VOL["Temporal coupling:<br/>Surviving failures = removing<br/>the need for everyone to be up at once"]
     Q3 -.->|"Maps to"| DIST["Distance:<br/>Cross-service = high distance,<br/>needs contract coupling"]
 
     style Fit fill:#69db7c,color:#000
@@ -788,7 +869,7 @@ flowchart TD
 
 ### When Temporal Reduces Net Coupling
 
-Based on the [Temporal use cases](https://docs.temporal.io/evaluate/use-cases-design-patterns) and [decision framework](https://kawofong.github.io/temporal-platform-hub/decision-framework), these scenarios benefit most:
+Based on the [Temporal use cases](https://docs.temporal.io/evaluate/use-cases-design-patterns), these scenarios benefit most:
 
 | Use Case                                                         | Without Temporal (Coupling)                                              | With Temporal (Coupling)                                                        | Net Effect          |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------- |
@@ -800,12 +881,12 @@ Based on the [Temporal use cases](https://docs.temporal.io/evaluate/use-cases-de
 
 ### When Temporal Increases Net Coupling
 
-The [decision framework's anti-patterns](https://kawofong.github.io/temporal-platform-hub/decision-framework#bad-use-cases-for-temporal) align with cases where the platform coupling overhead exceeds the coupling it removes:
+In these cases the platform coupling costs more than the coupling it removes:
 
 | Anti-Pattern                     | Why Temporal Increases Coupling                                                                                                                           | Better Alternative            |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
 | **Simple request-response APIs** | No failure recovery needed. Adding Temporal introduces SDK coupling, Worker deployment, and Temporal Service dependency for zero benefit.                 | REST / gRPC server            |
-| **Real-time stream processing**  | Ultra-low latency (<100ms) and high throughput (>1M events/sec) don't match Temporal's execution model. The platform's durability guarantees add latency. | Flink, Kafka Streams, Kinesis |
+| **Real-time stream processing**  | Per-event durability adds latency to every step; a stream processor amortizes it across a batch.                                                          | Flink, Kafka Streams, Kinesis |
 | **Database triggers**            | Logic is tightly coupled to the database by design. Extracting it into Temporal adds distance without reducing integration strength.                      | Database-native features      |
 | **Pure compute workloads**       | No I/O, no state management, no service calls. Temporal's value proposition doesn't apply.                                                                | Lambda, Spark, Ray            |
 
@@ -826,8 +907,8 @@ flowchart TB
     end
 
     subgraph volatility ["Volatility"]
-        V1["Without Temporal:<br/>🔴 Every infrastructure concern<br/>(retries, state, timeouts) is a<br/>volatility surface"]
-        V2["With Temporal:<br/>🟢 Infrastructure absorbed<br/>by platform. Volatility limited<br/>to business logic changes."]
+        V1["Without Temporal:<br/>🔴 A change to the volatile core<br/>process also touches retry, state,<br/>and timeout code"]
+        V2["With Temporal:<br/>🟢 The process is just as volatile,<br/>but a change touches only<br/>the Workflow"]
     end
 
     style S1 fill:#ff6b6b,color:#fff
@@ -838,13 +919,13 @@ flowchart TB
     style V2 fill:#69db7c,color:#000
 ```
 
-The fundamental coupling insight of durable execution is this: **by absorbing infrastructure concerns into the platform, Temporal lets you keep integration strength low even at high distance.** This is exactly the formula for loose coupling from the [balance matrix](README.md#balance-the-key-insight):
+By taking over the infrastructure concerns, Temporal lets you keep integration strength at Contract even when distance is high. That is the loose-coupling cell of the [balance matrix](README.md#balance-the-key-insight):
 
 ```
 Low Strength + High Distance = Loose Coupling ✅
 ```
 
-The tradeoff is platform coupling — but that coupling is at model level with low volatility, which places it firmly in the acceptable zone. For use cases with multi-step processes, failure recovery needs, and cross-service coordination, adopting durable execution is a net coupling reduction that simultaneously reduces accidental complexity.
+The price is platform coupling, which is Contract coupling to a low-volatility SDK. For multi-step processes that span services and must survive failures, adopting durable execution reduces net coupling.
 
 ---
 
@@ -854,7 +935,9 @@ The tradeoff is platform coupling — but that coupling is at model level with l
 
 - [Understanding Temporal](https://docs.temporal.io/evaluate/understanding-temporal) — Core concepts: Durable Execution, Workflows, Activities, Workers
 - [Use Cases & Design Patterns](https://docs.temporal.io/evaluate/use-cases-design-patterns) — Production use cases and architectural patterns (Saga, State Machine)
-- [Decision Framework](https://kawofong.github.io/temporal-platform-hub/decision-framework) — When to use (and not use) Temporal
+- [Workflow Versioning](https://docs.temporal.io/develop/typescript/versioning) — Changing Workflow code without breaking replay
+- [Continue-As-New](https://docs.temporal.io/develop/typescript/continue-as-new) — Staying under Event History limits
+- [Activities](https://docs.temporal.io/activities) — Retry semantics and the idempotency recommendation
 - [Workflow Message Passing](https://docs.temporal.io/encyclopedia/workflow-message-passing) — Signals, Queries, and Updates
 - [Detecting Activity Failures](https://docs.temporal.io/encyclopedia/detecting-activity-failures) — Timeouts and heartbeats
 - [Event History](https://docs.temporal.io/encyclopedia/event-history) — How durable execution persists state

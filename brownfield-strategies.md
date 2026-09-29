@@ -2,7 +2,7 @@
 
 [← Back to Main Guide](README.md) | [← FRP & Coupling](functional-reactive-coupling.md) | [Next: Three C's of Distributed Transactions →](three-cs-distributed-transactions.md)
 
-> You have a monolith. Or worse — a distributed monolith. You can't rewrite it.
+> You have a monolith. Or worse, a distributed monolith. You can't rewrite it.
 > You can't freeze features for six months. You have real users, limited budget,
 > and a team that's still learning. **This guide is for you.**
 
@@ -55,7 +55,7 @@ flowchart TD
     style Boundaries fill:#e8e8e8,color:#000
 ```
 
-These are **analysis techniques**, not migration strategies. They answer _"what are the boundaries?"_ — not _"how do we migrate?"_ That question is answered in [Phase 2](#phase-2-choose-a-migration-strategy).
+These are **analysis techniques**. They tell you where the boundaries are. How to migrate across them is [Phase 2](#phase-2-choose-a-migration-strategy).
 
 ### ELI5: Component Decomposition vs. Tactical Forking
 
@@ -68,20 +68,20 @@ These are **analysis techniques**, not migration strategies. They answer _"what 
 
 If the monolith already has identifiable modules, packages, or namespaces that map to business domains, you can decompose it component by component:
 
-1. **Identify and size components** — count statements, measure coupling metrics
-2. **Gather common domain components** — group related components into domain clusters
-3. **Flatten to create component domains** — merge overly fine-grained components that always change together
-4. **Extract incrementally** — using a migration strategy from Phase 2
+1. **Identify and size components**: count statements, measure coupling metrics
+2. **Gather common domain components**: group related components into domain clusters
+3. **Flatten to create component domains**: merge overly fine-grained components that always change together
+4. **Extract incrementally**, using a migration strategy from Phase 2
 
 ### Tactical Forking
 
 If the codebase is a "big ball of mud" with no clear boundaries, the _Hard Parts_ authors describe **tactical forking**: copy the entire monolith for each team, then have each team delete the code they don't need. This sounds crude, but it can be the fastest path to separation when no seams exist.
 
-The approach is described in detail by Dehghani: each fork starts as a complete copy. Teams then remove what they don't own, leaving behind focused services that can be cleaned up independently. The key insight is that _deleting code is safer and easier than extracting code_ from a tangled codebase.
+Each fork starts as a complete copy. Teams then remove what they don't own, leaving behind focused services that can be cleaned up independently. Deleting code from a copy is safer and easier than extracting code from a tangled codebase.
 
 ### Sizing Your Components
 
-The _Hard Parts_ authors recommend measuring component size by **total number of statements**. Components that are 1–2 standard deviations from the mean are well-sized. Outliers in either direction are candidates for splitting or merging.
+The _Hard Parts_ authors recommend measuring component size by **total number of statements**. Outliers in either direction are candidates for splitting or merging.
 
 **Granularity Disintegrators** (reasons to split):
 | Driver | Signal |
@@ -100,7 +100,7 @@ The _Hard Parts_ authors recommend measuring component size by **total number of
 | Shared code | Extensive shared library that would need coordinated releases |
 | Data relationships | Data belongs to a single bounded context |
 
-> **Three C's connection:** The first two integrators — *Database transactions* and *Workflow coupling* — map directly to the **Consistency** and **Communication** dimensions of the [Three C's framework](three-cs-distributed-transactions.md). If two components need atomic consistency, splitting them forces you into saga compensation logic. If they communicate so heavily that async messaging would create unacceptable latency, they're functionally one service. Use the [Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) to evaluate whether the saga complexity of splitting is justified.
+> **Three C's connection:** The first two integrators, *Database transactions* and *Workflow coupling*, are the **Consistency** and **Communication** axes of the [Three C's framework](three-cs-distributed-transactions.md). If two components need atomic consistency, splitting them forces you into saga compensation logic. If they communicate so heavily that async messaging would create unacceptable latency, they're functionally one service. Use the [Eight Saga Species](three-cs-distributed-transactions.md#the-eight-saga-species) to evaluate whether the saga complexity of splitting is justified.
 
 ---
 
@@ -108,14 +108,14 @@ The _Hard Parts_ authors recommend measuring component size by **total number of
 
 Once you've identified your boundaries (Phase 1), you need a strategy for **how** to migrate. The two primary strategies operate at different levels:
 
-- **Strangler Fig** works at the **application boundary** — an external proxy/façade intercepts traffic and redirects routes to new services
-- **Branch by Abstraction** works **inside the codebase** — an abstraction layer allows old and new implementations to coexist, swapping incrementally
+- **Strangler Fig** works at the **application boundary**: an external proxy/façade intercepts traffic and redirects routes to new services
+- **Branch by Abstraction** works **inside the codebase**: an abstraction layer allows old and new implementations to coexist, swapping incrementally
 
-Both strategies are incremental. Both keep the system live during migration. They can even be used together — strangler fig for external API migration, branch by abstraction for internal component replacement.
+Both strategies are incremental. Both keep the system live during migration. They combine: strangler fig for external API migration, branch by abstraction for internal component replacement.
 
 ### Strategy 1: Strangler Fig
 
-The strangler fig pattern — named by Martin Fowler after a tree that grows around its host until it replaces it — is the most battle-tested approach for incrementally migrating a monolith at the **API/network boundary**. Fowler, Cartwright, Horn, and Lewis describe [four high-level activities](https://martinfowler.com/articles/patterns-legacy-displacement/) for this kind of incremental displacement:
+The strangler fig pattern, named by Martin Fowler after a tree that grows around its host until it replaces it, is the most used approach for incrementally migrating a monolith at the **API/network boundary**. Cartwright, Horn, and Lewis describe [four high-level activities](https://martinfowler.com/articles/patterns-legacy-displacement/) for this kind of incremental displacement:
 
 1. **Understand the outcomes** you want to achieve
 2. **Decide how to break the problem** into smaller parts (find [seams](https://martinfowler.com/bliki/LegacySeam.html))
@@ -126,11 +126,11 @@ The strangler fig pattern — named by Martin Fowler after a tree that grows aro
 
 > 🌿 **Imagine a vine growing around an old tree.**
 >
-> The vine slowly wraps around each branch, providing its own structure. Over time, each branch of the old tree dies and the vine takes its place. The tree is never "cut down" — it's gradually replaced while staying alive the whole time. That's the strangler fig: you build new functionality around the old system, redirecting traffic one route at a time, until the old system has nothing left to do.
+> The vine slowly wraps around each branch, providing its own structure. Over time, each branch of the old tree dies and the vine takes its place. The tree is never cut down. It is replaced while staying alive the whole time. That's the strangler fig: you build new functionality around the old system, redirecting traffic one route at a time, until the old system has nothing left to do.
 
 ### How It Works
 
-The pattern requires a **façade** — an intercepting layer that sits between clients and the monolith and routes traffic. In modern implementations this façade is typically an **API gateway** (e.g., Kong, AWS API Gateway, Azure API Management) or a **reverse proxy** (e.g., YARP, Envoy, nginx, Spring Cloud Gateway). The gateway isn't a separate strategy — it's the _mechanism_ that makes strangler fig work.
+The pattern requires a **façade**: an intercepting layer that sits between clients and the monolith and routes traffic. In modern implementations this façade is typically an **API gateway** (e.g., Kong, AWS API Gateway, Azure API Management) or a **reverse proxy** (e.g., YARP, Envoy, nginx, Spring Cloud Gateway). The gateway is the _mechanism_ that makes strangler fig work, not a separate strategy.
 
 ```mermaid
 flowchart LR
@@ -189,7 +189,7 @@ export const routes: RouteConfig[] = [
     upstream: "http://order-service:3001",
     transforms: [stripPrefix("/api")],
   },
-  // 🔄 In progress: read from new, write to old (parallel run)
+  // 🔄 In progress: reads go to the new service, writes still go to the monolith
   {
     path: "/api/customers",
     method: "GET",
@@ -264,17 +264,17 @@ During migration, the new service often still needs data from the monolith. The 
 
 | Dimension            | Value           | Why                                                                         |
 | -------------------- | --------------- | --------------------------------------------------------------------------- |
-| Integration Strength | 🟢 Contract     | Proxy routes by contract; ACL translates models                             |
-| Distance             | 🟡 Medium       | New service is separate but still talks to monolith during transition       |
-| Volatility           | 🟢 Low-per-step | Each step changes one feature boundary at a time                            |
-| **Verdict**          | ✅              | **Incremental risk — each step is independently deployable and reversible** |
+| Integration Strength | 🔵 Contract at the gateway, 🟢 Model inside the ACL | Clients see only routes. The ACL depends on the monolith's response shape, which is the monolith's model; the ACL exists to stop it there |
+| Distance             | 🔴 High         | The new service is a separate deployable that still calls the monolith                       |
+| Volatility           | 🔴 High         | The feature being strangled is, by selection, the one changing most                          |
+| **Verdict**          | ⚠️              | Model strength at high distance inside the ACL fails the XOR. The ACL is [transitional architecture](#transitional-architecture) that confines that cost to one class until the monolith endpoint is retired. Everything else is Contract |
 
 ### TypeScript — Strangler Proxy
 
 ```typescript
 // strangler-proxy/src/proxy.ts
 import express from "express";
-import httpProxy from "http-proxy-middleware";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 const app = express();
 
@@ -287,19 +287,13 @@ const migratedRoutes: Record<string, string> = {
 
 // Migrated features go to new services
 for (const [path, target] of Object.entries(migratedRoutes)) {
-  app.use(
-    path,
-    httpProxy.createProxyMiddleware({ target, changeOrigin: true }),
-  );
+  app.use(path, createProxyMiddleware({ target, changeOrigin: true }));
 }
 
 // Everything else falls through to the monolith
 app.use(
   "/",
-  httpProxy.createProxyMiddleware({
-    target: "http://monolith:8080",
-    changeOrigin: true,
-  }),
+  createProxyMiddleware({ target: "http://monolith:8080", changeOrigin: true }),
 );
 
 app.listen(3000, () => console.log("Strangler proxy on :3000"));
@@ -314,7 +308,7 @@ interface MonolithCustomerResponse {
   cust_name: string;
   cust_email: string;
   credit_lmt: number; // monolith naming conventions
-  acct_status: "A" | "I" | "S"; // Active, Inactive, Suspended — legacy codes
+  acct_status: "A" | "I" | "S"; // Active, Inactive, Suspended: legacy codes
 }
 
 // Our domain model — clean and intentional
@@ -464,18 +458,18 @@ spring:
     gateway:
       routes:
         - id: orders
-        uri: http://order-service:8081
-        predicates:
+          uri: http://order-service:8081
+          predicates:
             - Path=/api/orders/**
         - id: inventory
-        uri: http://inventory-service:8082
-        predicates:
+          uri: http://inventory-service:8082
+          predicates:
             - Path=/api/inventory/**
         - id: monolith-fallback
-        uri: http://monolith:8080
-        predicates:
+          uri: http://monolith:8080
+          predicates:
             - Path=/**
-        order: 9999
+          order: 9999
 ```
 
 ```java
@@ -556,7 +550,7 @@ Branch by Abstraction is the internal counterpart to the strangler fig. Instead 
 
 > 🔌 **Imagine an electrical adapter.**
 >
-> You're upgrading all the outlets in your house from two-prong to three-prong. You can't rip them all out at once — you'd have no power. Instead, you install universal adapters that accept _both_ plug types. Then you swap each outlet one by one. When they're all done, you remove the adapters. The adapters are the abstraction layer — they let old and new coexist safely.
+> You're upgrading all the outlets in your house from two-prong to three-prong. You can't rip them all out at once; you'd have no power. Instead, you install universal adapters that accept _both_ plug types. Then you swap each outlet one by one. When they're all done, you remove the adapters. The adapters are the abstraction layer that lets old and new coexist safely.
 
 ### How It Works
 
@@ -596,18 +590,20 @@ The five steps in detail:
 
 1. **Create an abstraction layer** around the component you want to replace (an interface, a wrapper class, or an architectural layer like a repository)
 2. **Redirect all callers** to use the abstraction instead of the old implementation directly
-3. **Build the new implementation** behind the same abstraction — use feature flags or a toggle to control which implementation is active
-4. **Incrementally switch** callers (or features) from old to new — optionally run both in parallel to compare results (see GitHub's [Scientist](https://github.com/github/scientist) library)
+3. **Build the new implementation** behind the same abstraction, with a feature flag or toggle controlling which implementation is active
+4. **Incrementally switch** callers (or features) from old to new. Optionally run both in parallel and compare results, a **parallel run**, using a library like GitHub's [Scientist](https://github.com/github/scientist)
 5. **Remove** the old implementation, then (optionally) remove the abstraction layer itself
 
-### Real-World Example: GitHub's Merge System
+### Real-World Example: GitHub's Merge Button
 
-GitHub needed to rewrite a critical part of their platform (the merge system) without downtime, while deploying ~60 times per day. They used Branch by Abstraction with the [Scientist](https://github.com/github/scientist) library:
+GitHub rewrote the code behind the merge button without downtime and described the approach in [Move Fast and Fix Things](https://github.blog/2015-12-15-move-fast/). Their [Scientist](https://github.com/github/scientist) library ran the old and new implementations side by side:
 
-- The abstraction layer ran **both** old and new implementations on every request
-- It always returned the **old** result to users (safety net)
-- It compared old and new results, logging any discrepancies
-- Once discrepancies dropped to zero, they switched the primary to the new implementation
+- Both implementations ran on every request
+- Users always got the **old** (control) result
+- Mismatches between old and new were recorded for the team to investigate
+- The new implementation took over once the team trusted the results
+
+This is the parallel-run step of Branch by Abstraction. The abstraction is the experiment boundary; the two implementations sit behind it.
 
 ### TypeScript — Branch by Abstraction
 
@@ -626,6 +622,11 @@ export interface PricingEngine {
 
 // implementations/legacy-pricing.ts — wraps the old implementation
 export class LegacyPricingEngine implements PricingEngine {
+  constructor(
+    private legacyPricingModule: LegacyPricingModule,
+    private legacyDiscountTable: LegacyDiscountTable,
+  ) {}
+
   async calculatePrice(productId: string, quantity: number): Promise<number> {
     // Delegates to the original monolith pricing logic
     return this.legacyPricingModule.getPrice(productId) * quantity;
@@ -659,11 +660,14 @@ export class NewPricingEngine implements PricingEngine {
 
 // Step 3: Toggle between implementations
 // pricing-factory.ts
-export function createPricingEngine(featureFlags: FeatureFlags): PricingEngine {
+export function createPricingEngine(
+  featureFlags: FeatureFlags,
+  legacy: { pricing: LegacyPricingModule; discounts: LegacyDiscountTable },
+): PricingEngine {
   if (featureFlags.isEnabled("new-pricing-engine")) {
     return new NewPricingEngine(new PricingRuleRepository());
   }
-  return new LegacyPricingEngine();
+  return new LegacyPricingEngine(legacy.pricing, legacy.discounts);
 }
 ```
 
@@ -712,6 +716,8 @@ public class NewPricingEngine(IPricingRuleRepository pricingRules) : IPricingEng
 
 // DI Registration — toggle via feature flag
 // Program.cs
+builder.Services.AddScoped<LegacyPricingEngine>();
+builder.Services.AddScoped<NewPricingEngine>();
 builder.Services.AddScoped<IPricingEngine>(sp =>
 {
     var flags = sp.GetRequiredService<IFeatureFlags>();
@@ -800,10 +806,10 @@ public class PricingConfig {
 
 | Dimension            | Value           | Why                                                                                  |
 | -------------------- | --------------- | ------------------------------------------------------------------------------------ |
-| Integration Strength | 🟢 Contract     | Callers depend on the abstraction (interface), not the implementation                |
+| Integration Strength | 🔵 Contract     | Callers depend on the abstraction (interface), not the implementation                |
 | Distance             | 🟢 Low          | Both implementations live within the same codebase / deployable                      |
-| Volatility           | 🟢 Low-per-step | Each swap is a small, reversible change behind a feature flag                        |
-| **Verdict**          | ✅              | **Lowest-risk migration — no network boundary, no proxy, just swap implementations** |
+| Volatility           | 🔴 High         | The component behind the abstraction is the one being replaced                       |
+| **Verdict**          | ⚠️              | Contract at low distance is the formula's low-cohesion cell, and here that is the point: the abstraction exists so the implementation can be swapped, and step 5 removes it once the swap is done. No network boundary, no proxy |
 
 ### When to Use Branch by Abstraction
 
@@ -855,19 +861,19 @@ You can reach either target using either migration strategy. The target is ortho
 | **→ Service-Based Architecture** | Extract routes to coarse-grained domain services behind a gateway  | Introduce service abstractions internally, then extract when ready |
 | **→ Microservices**              | Extract routes to fine-grained services with independent databases | Swap components internally first, then break apart the deployable  |
 
-> **Key insight from Richards:** Service-based architecture is not a compromise or a failure to achieve microservices. For many organizations, it _is_ the right target architecture. Don't pursue microservices unless the tradeoffs justify it. Every additional service is a tax on your team's cognitive load.
+> Richards' argument: service-based architecture is a target architecture in its own right, not a failed attempt at microservices. Don't pursue microservices unless the tradeoffs justify it. Every additional service is a tax on your team's cognitive load.
 
 ### Service-Based Architecture
 
-Mark Richards describes **service-based architecture** as a pragmatic middle ground between a monolith and microservices. Instead of extracting dozens of fine-grained microservices, you extract a handful of **coarse-grained domain services** — typically 4 to 12 — that share a database (or a small number of databases).
+Mark Richards describes **service-based architecture** as a pragmatic middle ground between a monolith and microservices. Instead of extracting dozens of fine-grained microservices, you extract a handful of **coarse-grained domain services** that share a database (or a small number of databases).
 
 #### ELI5
 
 > 🏢 **Imagine a company that works out of one office building.**
 >
-> A monolith is like everyone in one giant open-plan room — accounting, engineering, sales, support, all shouting over each other.
+> A monolith is like everyone in one giant open-plan room: accounting, engineering, sales, support, all shouting over each other.
 >
-> Microservices is like giving every person their own office building in different cities — great isolation, but now you need phones, mail systems, and travel budgets just to have a conversation.
+> Microservices is like giving every person their own office building in different cities. Great isolation, but now you need phones, mail systems, and travel budgets just to have a conversation.
 >
 > **Service-based architecture** is the sensible middle: you put each department on its own floor of the same building. They have their own space (separate deployments), share the building (infrastructure), and can take the elevator when they need to talk face-to-face (shared database or direct calls). It's the architecture for teams that need autonomy but can't afford the operational overhead of microservices.
 
@@ -900,16 +906,16 @@ flowchart TD
 
 | Dimension            | Value         | Why                                                                                   |
 | -------------------- | ------------- | ------------------------------------------------------------------------------------- |
-| Integration Strength | 🟡 Model      | Services share the database schema (model coupling), but each owns its tables         |
-| Distance             | 🟢 Low-Medium | Separate deployments but same infrastructure                                          |
-| Volatility           | 🟡 Medium     | Core domains change independently but share data model                                |
-| **Verdict**          | ✅            | **Pragmatic balance — less coupling than monolith, less overhead than microservices** |
+| Integration Strength | 🔵 Contract   | Services call each other's APIs. The shared database instance is not shared knowledge while each service owns its tables |
+| Distance             | 🔴 High       | Separate deployables. The shared database raises lifecycle coupling: schema migrations are coordinated |
+| Volatility           | 🔴 High       | Core domains                                                                          |
+| **Verdict**          | ✅            | Contract at high distance. The shared database is a lifecycle cost, not a strength cost. Cross-service joins, where Richards' rules allow them, are Intrusive coupling: track each one as transitional |
 
 #### Key Design Rules (from Richards)
 
 1. **Each service owns a clear domain.** Don't slice by technical layer (API, business logic, data). Slice by business capability.
 2. **Database coupling is the tradeoff you accept.** Services share a database but each service should own its tables (or schema). Cross-service joins are allowed but tracked.
-3. **Internal APIs are simple.** Services call each other directly — no event bus, no message broker. Keep ceremonial overhead low.
+3. **Internal APIs are simple.** Services call each other directly, with no event bus or message broker. Keep ceremonial overhead low.
 4. **Deploy independently.** Each service is a separate deployable unit, even though they share a database.
 
 #### TypeScript — Service-Based Architecture
@@ -1065,17 +1071,17 @@ public class OrderDomainService {
 
 | ✅ Good Fit                                                        | ❌ Poor Fit                                                           |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| Team of 5–25 engineers                                             | Team of 100+ requiring independent deployment cadences                |
+| A few teams that can coordinate schema changes                     | Many teams that need independent deployment cadences                  |
 | Limited DevOps maturity or infrastructure budget                   | Mature platform team with full CI/CD, observability, and service mesh |
 | You need faster deploys but can't afford per-service databases yet | You need elastic scaling of individual features                       |
-| Your monolith has identifiable domain boundaries                   | Your system has no domain cohesion — it's a big ball of mud           |
+| Your monolith has identifiable domain boundaries                   | Your system has no domain cohesion: a big ball of mud                 |
 | You want an evolutionary stepping stone toward microservices       | You're building a greenfield system with clear bounded contexts       |
 
 ### Microservices
 
-Microservices — fine-grained, independently deployable services each owning their own data — is a well-known target architecture. We don't cover microservices in depth here because the entire coupling tutorial suite already addresses the coupling challenges they introduce (see [coupling-dimensions.md](coupling-dimensions.md) and [coupling-in-practice.md](coupling-in-practice.md)).
+Microservices, fine-grained independently deployable services each owning their own data, is a well-known target architecture. We don't cover microservices in depth here because the entire coupling tutorial suite already addresses the coupling challenges they introduce (see [coupling-dimensions.md](coupling-dimensions.md) and [coupling-in-practice.md](coupling-in-practice.md)).
 
-The key question for brownfield teams is: **do your business drivers actually require microservices?** Per the Architecture Styles Worksheet, microservices score highest on scalability, elasticity, fault tolerance, and evolvability — but also score highest on cost ($$$$$) and lowest on simplicity.
+The question for brownfield teams is whether your business drivers require microservices. They buy scalability, elasticity, fault tolerance, and evolvability. They cost the most to operate and the most to understand.
 
 #### When Microservices Are Worth the Cost
 
@@ -1086,13 +1092,13 @@ The key question for brownfield teams is: **do your business drivers actually re
 | Polyglot technology requirements       | Different services can use different languages, frameworks, or data stores |
 | Regulatory isolation                   | Sensitive data can be physically isolated in a single service              |
 
-> ⚠️ **If you don't have these drivers, service-based architecture is almost certainly the better target.** Microservices are not the default — they are the option you earn when the tradeoffs justify the complexity.
+> ⚠️ **Without these drivers, service-based architecture is the better target.** Microservices are the option you earn when the tradeoffs justify the complexity.
 
 ---
 
 ## Enabling Tactics
 
-Strangler Fig and Branch by Abstraction are _migration strategies_. Service-Based Architecture and Microservices are _target styles_. The following are _tactics_ — reusable mechanisms you deploy _within_ any strategy to reach any target. They compose freely.
+Strangler Fig and Branch by Abstraction are _migration strategies_. Service-Based Architecture and Microservices are _target styles_. The following are _tactics_: reusable mechanisms you deploy _within_ any strategy to reach any target. They compose freely.
 
 ```mermaid
 flowchart TD
@@ -1131,22 +1137,22 @@ flowchart TD
 
 ### API Gateways and Reverse Proxies
 
-As covered in [Strategy 1: Strangler Fig](#strategy-1-strangler-fig), the API gateway is the _façade_ that the strangler fig pattern requires. It is equally useful in any target architecture — as a single entry point that routes to domain services and provides centralized auth, rate limiting, and observability.
+As covered in [Strategy 1: Strangler Fig](#strategy-1-strangler-fig), the API gateway is the _façade_ that the strangler fig pattern requires. It is equally useful in any target architecture as a single entry point that routes to domain services and provides centralized auth, rate limiting, and observability.
 
-The gateway's fundamental role: **it decouples clients from the internal structure of the backend.** When you later split a service, move a feature, or swap a deployment topology, clients are unaffected.
+The gateway decouples clients from the internal structure of the backend. When you later split a service, move a feature, or swap a deployment topology, clients are unaffected.
 
 ### Feature Flags
 
-Feature flags are essential to [Branch by Abstraction](#strategy-2-branch-by-abstraction). They let you toggle between old and new implementations at runtime — per-user, per-environment, or globally. Combined with the abstraction layer, they enable:
+Feature flags are what make [Branch by Abstraction](#strategy-2-branch-by-abstraction) switchable at runtime, per user, per environment, or globally. Combined with the abstraction layer, they enable:
 
-- **Dark launching** — run the new implementation in production without exposing it to users
-- **Parallel verification** — run both implementations and compare results (like GitHub's Scientist)
-- **Gradual rollout** — switch a percentage of traffic to the new implementation
-- **Instant rollback** — flip the flag back if something goes wrong
+- **Dark launching**: run the new implementation in production without exposing it to users
+- **Parallel run**: run both implementations on the same request, return the old result, and compare (GitHub's Scientist)
+- **Gradual rollout**: switch a percentage of traffic to the new implementation
+- **Instant rollback**: flip the flag back if something goes wrong
 
 ### Serverless as a Deployment Target
 
-Serverless (AWS Lambda, Azure Functions, Google Cloud Functions) is not a migration strategy. It is a **deployment topology** — a way to run code that you have already decided to extract. You still need a strategy (strangler fig or branch by abstraction) to decide _what_ to extract and _when_.
+Serverless (AWS Lambda, Azure Functions, Google Cloud Functions) is a **deployment topology**, not a migration strategy: a way to run code you have already decided to extract. You still need a strategy (strangler fig or branch by abstraction) to decide _what_ to extract and _when_.
 
 ### ELI5
 
@@ -1156,9 +1162,9 @@ Serverless (AWS Lambda, Azure Functions, Google Cloud Functions) is not a migrat
 
 ### When Serverless Fits: The Semantic Complexity Test
 
-Ford et al. in _Software Architecture: The Hard Parts_ describe **architectural quantum** as "an independently deployable artifact with high functional cohesion, high static coupling, and synchronous dynamic coupling." A serverless function is the smallest possible quantum.
+Ford et al. in _Software Architecture: The Hard Parts_ call an independently deployable unit with high functional cohesion an **architectural quantum**. A serverless function is the smallest possible quantum.
 
-Serverless is a good extraction target when the workload has **low semantic complexity** — meaning the logic is straightforward, event-driven, and stateless:
+Serverless is a good extraction target when the workload has **low semantic complexity**: the logic is straightforward, event-driven, and stateless.
 
 ```mermaid
 flowchart TD
@@ -1318,11 +1324,11 @@ public class SendOrderConfirmation {
 
 ### Event Interception
 
-Cartwright, Horn, and Lewis describe [event interception](https://martinfowler.com/articles/patterns-legacy-displacement/event-interception.html) as a key legacy displacement tactic: intercept events (messages, database changes, API calls) flowing through the legacy system, and route some of them to new components. This is particularly useful when the monolith communicates via message queues or database triggers.
+Cartwright, Horn, and Lewis describe [event interception](https://martinfowler.com/articles/patterns-legacy-displacement/event-interception.html) as a legacy displacement tactic: intercept events (messages, database changes, API calls) flowing through the legacy system, and route some of them to new components. It fits when the monolith already communicates through message queues or database triggers. **Change data capture (CDC)**, reading a database's transaction log and turning each change into an event, is the variant that intercepts state changes the legacy code never published; the [data decomposition](#data-decomposition-the-hardest-part) section uses it to feed replicated columns.
 
 ### Code Reuse Patterns (from _The Hard Parts_)
 
-When extracting services you'll encounter shared code — utilities, domain models, DTOs — that multiple services need. The _Hard Parts_ authors describe four patterns, each with different coupling tradeoffs:
+When extracting services you'll encounter shared code (utilities, domain models, DTOs) that multiple services need. The _Hard Parts_ authors describe four patterns, each with different coupling tradeoffs:
 
 | Pattern                    | When to Use                                                       | Coupling Tradeoff                                                      |
 | -------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -1339,13 +1345,13 @@ When extracting services you'll encounter shared code — utilities, domain mode
 
 Cartwright, Horn, and Lewis define [transitional architecture](https://martinfowler.com/articles/patterns-legacy-displacement/transitional-architecture.html) as **"software elements installed to ease the displacement of a legacy system that we intend to remove when the displacement is complete."**
 
-This is a crucial concept for brownfield teams: during migration you will build code that exists solely to allow the old and new systems to coexist. This code has a planned end-of-life.
+During migration you will build code that exists only so the old and new systems can coexist. That code has a planned end-of-life.
 
 ### ELI5
 
 > 🚧 **Imagine temporary scaffolding on a building.**
 >
-> You put scaffolding up so workers can safely renovate the building. Nobody thinks the scaffolding is part of the building. It's ugly, it's in the way, and everyone wants it gone — but without it the renovation is impossible. Transitional architecture is your scaffolding. Name it, budget for it, and plan to tear it down.
+> You put scaffolding up so workers can safely renovate the building. Nobody thinks the scaffolding is part of the building. It's ugly, it's in the way, and everyone wants it gone, but without it the renovation is impossible. Transitional architecture is your scaffolding. Name it, budget for it, and plan to tear it down.
 
 ### Examples of Transitional Architecture
 
@@ -1353,7 +1359,7 @@ This is a crucial concept for brownfield teams: during migration you will build 
 | ---------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------- |
 | **Strangler façade** (API gateway/proxy) | Intercepts requests and routes to new or old                                       | When the monolith is fully decommissioned    |
 | **Anti-Corruption Layers**               | Translates between monolith and new service models                                 | When the monolith's data is fully migrated   |
-| **Legacy Mimics**                        | New service updates the legacy database so legacy reports/UIs still work           | When consumers move to new data sources      |
+| [**Legacy Mimics**](https://martinfowler.com/articles/patterns-legacy-displacement/legacy-mimic.html) | New service updates the legacy database so legacy reports/UIs still work | When consumers move to new data sources |
 | **Event routers / bridges**              | Route messages between old (e.g., SwiftMQ) and new (e.g., Kafka) messaging systems | When the old messaging system is retired     |
 | **Dual-write adapters**                  | Write to both old and new data stores during migration                             | When data migration is complete and verified |
 
@@ -1378,7 +1384,7 @@ Track transitional elements in your architecture documentation. Each should have
 
 ## Navigating Real-World Constraints
 
-Every strategy above assumes you have the freedom to choose. In practice, constraints shape—and sometimes dictate—your architecture.
+Every strategy above assumes you have the freedom to choose. In practice, constraints shape, and sometimes dictate, your architecture.
 
 ### The Constraint Matrix
 
@@ -1411,8 +1417,8 @@ mindmap
 
 | Constraint                                   | Recommended Approach                                                | Why                                                                                |
 | -------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Low budget** (< 3 infra engineers)         | Strangler Fig or Branch by Abstraction → Service-Based Architecture | Shared DB, fewer services to operate, minimal infrastructure overhead              |
-| **Small team** (< 10 engineers)              | Strangler Fig → Service-Based Architecture                          | Extract incrementally; keep the number of deployables manageable                   |
+| **Low budget**                               | Strangler Fig or Branch by Abstraction → Service-Based Architecture | Shared DB, fewer services to operate, minimal infrastructure overhead              |
+| **Small team**                               | Strangler Fig → Service-Based Architecture                          | Extract incrementally; keep the number of deployables manageable                   |
 | **Low DevOps maturity**                      | Branch by Abstraction → Service-Based Architecture                  | No proxy infrastructure needed initially; target keeps things simple               |
 | **High feature velocity needed**             | Strangler Fig with API Gateway → Service-Based or Microservices     | Decouple delivery of new features from legacy; ship new service independently      |
 | **Internal component swap** (ORM, framework) | Branch by Abstraction with Feature Flags                            | Swap implementations within the codebase without affecting the deployment topology |
@@ -1421,7 +1427,7 @@ mindmap
 
 ### The Cognitive Load Test
 
-Ford et al. emphasize that **architectural quantum** isn't just a technical concept — it has a human dimension. Each independently deployable unit requires someone to:
+An **architectural quantum** has a human dimension as well as a technical one. Each independently deployable unit requires someone to:
 
 - Build and maintain the CI/CD pipeline
 - Monitor, alert, and respond to incidents
@@ -1448,13 +1454,13 @@ flowchart TD
     style WAIT fill:#ffd43b,color:#000
 ```
 
-> **Key principle:** When in doubt, don't split. Merging services back together is harder than splitting them later. Start coarse-grained and refine based on evidence, not speculation.
+> When in doubt, don't split. Merging services back together is harder than splitting them later. Start coarse-grained and refine based on evidence.
 
 ---
 
 ## Data Decomposition: The Hardest Part
 
-The title of the book isn't accidental. The hardest part of breaking up a monolith isn't the code — it's the data. Shared databases create **model coupling** across service boundaries. The _Hard Parts_ authors describe several data access patterns for teams at different stages:
+The hardest part of breaking up a monolith is the data, not the code. A shared database is **Intrusive coupling** wherever one service reads tables another service owns, and lifecycle coupling everywhere: one schema, one migration cadence. The _Hard Parts_ authors describe several data access patterns for teams at different stages:
 
 ### Data Decomposition Decision Guide
 
@@ -1635,7 +1641,7 @@ public class OrderDomainService {
 
 ## Fitness Functions and Architecture Decision Records
 
-Decomposition produces dozens of decisions — "Should we split this service?" "Is a shared library acceptable here?" "Do we allow cross-service database access?" Without systematic tracking, these decisions get made informally, forgotten, and contradicted later.
+Decomposition produces dozens of decisions: whether to split a service, whether a shared library is acceptable, whether cross-service database access is allowed. Without systematic tracking, these decisions get made informally, forgotten, and contradicted later.
 
 ### Architectural Fitness Functions
 
@@ -1700,15 +1706,15 @@ class ArchitectureFitnessTest {
 
 ### Architecture Decision Records (ADRs)
 
-An ADR is a short document capturing a single architecture decision with its context, rationale, and consequences. Michael Nygard's [original format](https://cogniturity.com/ADR/) is simple:
+An ADR is a short document capturing a single architecture decision with its context, rationale, and consequences. Michael Nygard's [original format](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) is simple:
 
-1. **Title** — A noun phrase: "Use shared library for domain events"
-2. **Status** — Proposed, Accepted, Deprecated, Superseded
-3. **Context** — What forces are at play? What constraints exist?
-4. **Decision** — What are we doing?
-5. **Consequences** — What are the tradeoffs? What do we accept?
+1. **Title**: a noun phrase, such as "Use shared library for domain events"
+2. **Status**: Proposed, Accepted, Deprecated, Superseded
+3. **Context**: the forces at play and the constraints
+4. **Decision**: what we are doing
+5. **Consequences**: the tradeoffs we accept
 
-> 💡 **During brownfield migration, ADRs are essential.** Every extraction step involves tradeoffs. ADRs prevent future teams from re-debating resolved questions or unknowingly violating intentional constraints.
+> 💡 Write an ADR for every extraction step. Each one involves tradeoffs, and the record stops future teams from re-debating resolved questions or unknowingly violating intentional constraints.
 
 **Example migration ADR:**
 
@@ -1735,7 +1741,7 @@ A fitness function flags any NEW cross-service table dependencies.
 ## Consequences
 
 - ✅ Unblocks service extraction without data migration risk
-- ❌ Retains schema-level coupling (integration strength = model)
+- ❌ Retains schema-level coupling (Intrusive: both services read and write the same tables)
 - ❌ Cannot deploy schema changes independently
 - 📅 Phase 2 must address data decomposition (see ADR-009)
 ```
@@ -1744,7 +1750,7 @@ A fitness function flags any NEW cross-service table dependencies.
 
 ## Putting It All Together: A Brownfield Playbook
 
-This is not a prescriptive roadmap. It's a menu of tactics based on the literature. Choose what fits your situation.
+This is a menu of tactics from the literature, not a roadmap. Choose what fits your situation.
 
 ```mermaid
 flowchart TD
@@ -1764,7 +1770,7 @@ flowchart TD
     SFP --> F["Phase 3:<br/>Target Architecture"]
     BBAP --> F
 
-    F -->|"Small team /<br/>Low budget"| G[Service-Based Architecture<br/>4-8 domain services, shared DB]
+    F -->|"Small team /<br/>Low budget"| G[Service-Based Architecture<br/>A handful of domain services, shared DB]
     F -->|"Large teams /<br/>Independent scaling"| H[Microservices<br/>Fine-grained, own data]
 
     G --> J{Is it working well?}
@@ -1788,7 +1794,7 @@ flowchart TD
 
 2. **Match the strategy to the boundary type.** Use [strangler fig](#strategy-1-strangler-fig) for external API/network boundaries. Use [branch by abstraction](#strategy-2-branch-by-abstraction) for internal component replacement. Use both when your migration spans both boundary types.
 
-3. **Extract the most volatile, highest-pain domain first.** Don't start with authentication or user management — start with the feature that's blocking your team the most. This aligns with Khononov's volatility dimension: [high volatility + high distance = high coupling cost](coupling-dimensions.md#3-volatility).
+3. **Extract the most volatile, highest-pain domain first.** Don't start with authentication or user management. Start with the feature that's blocking your team the most. In Khononov's terms, the [volatile core](coupling-dimensions.md#3-volatility) is where high strength at high distance hurts most, so it is where a contract boundary pays off first.
 
 4. **Prefer coarse-grained services initially.** A [service-based architecture](#service-based-architecture) with 6 domain services is better than 60 poorly-bounded microservices. You can always split later; merging is painful.
 
@@ -1796,7 +1802,7 @@ flowchart TD
 
 6. **Accept shared database as a transitional state.** The _Hard Parts_ authors note that shared database is an _acceptable, temporary_ coupling when the alternative is delayed migration. Track cross-service table access and schedule splits when the pain justifies it.
 
-7. **Name your transitional architecture.** Every adapter, mimic, and dual-write layer you build during migration is [transitional architecture](#transitional-architecture). Document it, budget for it, and plan its removal.
+7. **Name your transitional architecture.** Every adapter, mimic, and dual-write layer you build during migration is [transitional architecture](#transitional-architecture). Record each one with its exit condition.
 
 8. **Validate with fitness functions.** Convert architectural constraints into [automated checks](#fitness-functions-and-architecture-decision-records) that run in CI. Measure efferent/afferent coupling and instability before and after each extraction. See [coupling-metrics-and-refactoring.md](coupling-metrics-and-refactoring.md) for how to compute and interpret these numbers.
 

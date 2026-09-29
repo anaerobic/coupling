@@ -2,17 +2,16 @@
 
 [← Back to Main Guide](README.md) | [← Brownfield Strategies](brownfield-strategies.md) | [Next: Durable Execution & Orchestration →](durable-execution-orchestration.md)
 
-> _"There isn't one kind of saga. There are **eight**, and they differ along three_
-> _independent dimensions."_
-> — Ford, Richards, Sadalage, and Dehghani
+> _"...an overview of the eight possible transactional sagas and their pros and cons."_
+> — Mark Richards, [Lesson 221: Introduction to Transactional Sagas](https://developertoarchitect.com/lessons/lesson221.html)
 
-The Saga pattern is often described as a single concept — "a sequence of local transactions with compensating actions" — but in practice, there isn't one kind of saga. There are **eight**, and they differ along three independent dimensions that Ford, Richards, Sadalage, and Dehghani call the **Three C's** in [_Software Architecture: The Hard Parts_](brownfield-strategies.md#further-reading):
+The Saga pattern is usually described as one thing: a sequence of local transactions with compensating actions. In [_Software Architecture: The Hard Parts_](brownfield-strategies.md#further-reading), Ford, Richards, Sadalage, and Dehghani split it along three independent axes. This guide calls them the **Three C's**:
 
-1. **Communication** — Synchronous vs. Asynchronous
-2. **Consistency** — Atomic vs. Eventual
-3. **Coordination** — Orchestrated vs. Choreographed
+1. **Communication**: Synchronous vs. Asynchronous
+2. **Consistency**: Atomic vs. Eventual
+3. **Coordination**: Orchestrated vs. Choreographed
 
-Each C represents a binary choice. Combine them and you get $2^3 = 8$ distinct saga topologies, each with different coupling characteristics. Understanding this framework is essential for choosing the right transaction pattern — and for recognizing which tradeoffs a platform like Temporal bakes in for you.
+Each C is a binary choice, so there are $2^3 = 8$ saga topologies, each with its own coupling profile. Knowing which one you are building tells you which tradeoffs a platform like Temporal makes for you.
 
 ---
 
@@ -24,7 +23,7 @@ Each C represents a binary choice. Combine them and you get $2^3 = 8$ distinct s
 - [The Eight Saga Species](#the-eight-saga-species)
 - [ELI5: Saga Species](#eli5-saga-species)
 - [Practical Recommendations](#practical-recommendations)
-- [Where Temporal Sits in the Three C's](#where-temporal-sits-in-the-three-cs)
+- [Where Temporal Sits in the Three C's](durable-execution-orchestration.md#where-temporal-sits-in-the-three-cs) (in the durable execution guide)
 
 ---
 
@@ -56,7 +55,7 @@ mindmap
 
 ## Communication: Synchronous vs. Asynchronous
 
-**Communication** determines whether the sender waits for a response before proceeding. This maps directly to the **temporal coupling** dimension discussed in [Coupling in Practice — Scenario 4](coupling-in-practice.md#scenario-4-temporal-coupling-in-synchronous-calls) and [FRP & Coupling — Back-Pressure and Temporal Coupling](functional-reactive-coupling.md#back-pressure-and-temporal-coupling).
+**Communication** determines whether the sender waits for a response before proceeding. A synchronous call is [temporal coupling](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling): both sides must be available at the same moment. See [Coupling in Practice, Scenario 4](coupling-in-practice.md#scenario-4-temporal-coupling-in-synchronous-calls) and [FRP & Coupling: Back-Pressure and Temporal Coupling](functional-reactive-coupling.md#back-pressure-and-temporal-coupling).
 
 | | **Synchronous** | **Asynchronous** |
 |---|---|---|
@@ -66,7 +65,7 @@ mindmap
 | **Debugging** | Easier — request/response flow is linear and traceable | Harder — must rely on distributed tracing to follow events |
 | **Performance** | Latency compounds across chain depth | Higher throughput — parallelism and buffering are natural |
 
-But communication isn't just sync vs. async — the **number of receivers** matters too. This creates a quadrant:
+The **number of receivers** matters as much as sync vs. async. Together they form a quadrant:
 
 ```mermaid
 quadrantChart
@@ -86,7 +85,7 @@ quadrantChart
 | **Async, Single Receiver** | Point-to-point queue | SQS, NATS (point-to-point) | 🟢 Low — sender publishes, one consumer processes |
 | **Async, Multiple Receivers** | Pub/Sub / fan-out | SNS, Kafka, EventBridge, Kinesis | 🟢 Lowest — sender doesn't know who listens |
 
-**Coupling insight:** Moving from the top-left (sync, single) to the bottom-right (async, multi) of this quadrant progressively _reduces integration strength_ and _eliminates temporal coupling_. This matches the balance principle from [the coupling dimensions](coupling-dimensions.md): when distance is high (separate services), keep integration strength low (contract coupling via events rather than direct API calls).
+Moving from the bottom-left (sync, single) to the top-right (async, multi) of this quadrant removes temporal coupling and reduces what the sender knows about its receivers: with pub/sub, the publisher does not know who listens. It does not by itself lower integration strength. That is set by what the message carries. An event that serializes a domain entity is still Model coupling; a DTO-shaped event is Contract. See [Runtime, Temporal, and Lifecycle Coupling](coupling-dimensions.md#runtime-temporal-and-lifecycle-coupling).
 
 ## Consistency: Atomic vs. Eventual
 
@@ -99,7 +98,7 @@ quadrantChart
 | **Complexity** | Higher — must implement and maintain rollback logic | Lower — fire and forget, with eventual convergence |
 | **Data structures** | May require distributed caches or locking to prevent inconsistent reads | Simpler — local projections updated via events (see [Column Schema Replication](brownfield-strategies.md#data-decomposition-the-hardest-part)) |
 
-**Coupling insight:** Atomic consistency creates **functional coupling** between the forward path and the compensation path — they _must_ stay in sync, and any change to one must be mirrored in the other. This is the "compensation mirroring" problem analyzed in the [hand-rolled saga example](durable-execution-orchestration.md#typescript--before-hand-rolled-saga-with-scattered-compensation). Eventual consistency eliminates this coupling surface entirely, but introduces the need for systems that tolerate stale reads — a tradeoff governed by [volatility](coupling-dimensions.md#3-volatility).
+Atomic consistency creates **functional coupling** between the forward path and the compensation path. Each compensation re-implements the inverse of a forward step, so any change to one must be mirrored in the other. This is the "compensation mirroring" problem in the [hand-rolled saga example](durable-execution-orchestration.md#typescript--before-hand-rolled-saga-with-scattered-compensation). Eventual consistency removes that coupling surface and instead requires every reader to tolerate stale data.
 
 ## Coordination: Orchestrated vs. Choreographed
 
@@ -129,14 +128,14 @@ flowchart LR
 | | **Orchestrated** | **Choreographed** |
 |---|---|---|
 | **Control flow** | Central coordinator knows the sequence and manages each step | No central control — each service reacts to events from others |
-| **Coupling topology** | Hub-and-spoke — coordinator is coupled to all participants (high Ca) | Mesh — services are coupled only to event contracts |
-| **Integration strength** | 🟡 Model — coordinator knows the sequence and participant contracts | 🔵 Contract — services know only event shapes, not who produces them |
+| **Coupling topology** | Hub-and-spoke — coordinator depends on all participants (high Ce) | Mesh — services are coupled only to event contracts |
+| **Integration strength** | 🔵 Contract — coordinator knows participant contracts and the sequence, not their internals | 🔵 Contract — services know only event shapes, not who produces them |
 | **Failure handling** | Centralized — coordinator manages compensation and retries | Distributed — each service handles its own errors |
 | **Observability** | Easier — one place to see the full process state | Harder — must reconstruct flow from distributed traces |
 | **Extensibility** | Change requires modifying the coordinator | New participants subscribe to existing events without changing producers |
 | **Technology examples** | AWS Step Functions, Temporal, saga orchestrators | SNS + Lambda, EventBridge rules, Kafka consumers |
 
-**Coupling insight:** Orchestration concentrates coupling in the coordinator (high afferent coupling — many services depend on it, or it depends on many services). This is the "throat to choke" — great for monitoring, but a change bottleneck. Choreography distributes coupling evenly across services — more extensible, but harder to reason about the whole transaction. This maps to the [Ce/Ca metrics](coupling-metrics-and-refactoring.md): an orchestrator has high Ce (it depends on all participants), making it unstable — which is correct, because the orchestrator _should_ change when the process changes.
+Both topologies are Contract coupling. What differs is where the dependencies concentrate. An orchestrator depends on every participant, so its [efferent coupling (Ce)](coupling-metrics-and-refactoring.md) is high and its instability is close to 1. That is the right shape: the orchestrator is the one component that _should_ change when the process changes, and it is the one place to watch the whole transaction. Choreography spreads the dependencies across services. Adding a participant means subscribing to an existing event, but reconstructing the whole transaction takes distributed tracing.
 
 ## The Eight Saga Species
 
@@ -148,9 +147,9 @@ Combining the three binary choices produces eight distinct saga topologies. Ford
 | **Phone Tag** (SAC) | Sync | Atomic | Choreographed | 🔴 High — sync calls without a coordinator. First service takes extra responsibility for rollback. Explodes in complexity with more steps. |
 | **Fairy Tale** (SEO) | Sync | Eventual | Orchestrated | 🟡 Medium — coordinator manages the flow synchronously, but tolerates inconsistent reads. Common when you _wanted_ Epic but can't guarantee read consistency. |
 | **Time Travel** (SEC) | Sync | Eventual | Choreographed | 🟡 Medium — sync calls between peers with no rollback. Situational — simple two-party interactions that tolerate lag. |
-| **Fantasy** (AAO) | Async | Atomic | Orchestrated | 🟢 Low-Medium — async communication via queues with a central coordinator managing rollback. The "classic saga" as most tutorials describe it. |
-| **Horror** (AAC) | Async | Atomic | Choreographed | 🔴 Highest complexity — implementing atomic rollback via events with no coordinator. Called "Horror" for good reason — avoid unless forced. |
-| **Parallel** (AEO) | Async | Eventual | Orchestrated | 🟢 Lowest practical coupling — async communication, no rollback, central coordinator for visibility. Best of both worlds for most use cases. |
+| **Fantasy** (AAO) | Async | Atomic | Orchestrated | 🟢 Low-Medium — async communication via queues with a central coordinator managing rollback. |
+| **Horror** (AAC) | Async | Atomic | Choreographed | 🔴 Highest complexity — atomic rollback via events with no coordinator. Avoid unless forced. |
+| **Parallel** (AEO) | Async | Eventual | Orchestrated | 🟢 Lowest practical coupling — async communication, no rollback, central coordinator for visibility. |
 | **Anthology** (AEC) | Async | Eventual | Choreographed | 🟢 Lowest coupling — fully event-driven, no coordinator, no rollback. Maximum decoupling, but hardest to observe and debug. Pure "event-driven architecture." |
 
 ## ELI5: Saga Species
@@ -158,19 +157,19 @@ Combining the three binary choices produces eight distinct saga topologies. Ford
 > 📚 **Think of it like group assignments in school.**
 >
 > - **Epic** (SAO): The teacher (coordinator) calls on each student one at a time (sync). If anyone fails, the whole project resets (atomic). The teacher watches everything (orchestrated). Simple, but if a student is absent, the class stops.
-> - **Anthology** (AEC): Students post their work on a shared bulletin board (async events). Nobody coordinates — each student picks up where others left off (choreographed). There's no do-over if someone makes a mistake (eventual). Maximum independence, but the teacher has no idea what's happening.
+> - **Anthology** (AEC): Students post their work on a shared bulletin board (async events). Nobody coordinates; each student picks up where others left off (choreographed). There's no do-over if someone makes a mistake (eventual). Maximum independence, but the teacher has no idea what's happening.
 > - **Horror** (AAC): Students post work on a bulletin board (async), but if _any_ student fails, they _all_ must undo their work (atomic) by posting _more_ events (choreographed). Nobody's in charge of the undo. Chaos.
 
 ## Practical Recommendations
 
-Based on the tradeoffs described by Ford et al. and the coupling analysis above:
+Based on the coupling analysis above (the book's own ratings of each species are not reproduced here):
 
 | Recommendation | Species | Why |
 |---|---|---|
-| **Start here** | **Epic** (SAO), **Parallel** (AEO), **Anthology** (AEC) | Each imposes a clean paradigm: Epic is simplest to build and debug; Parallel gives you async + observability without rollback complexity; Anthology is pure event-driven with maximum decoupling. |
+| **Start here** | **Epic** (SAO), **Parallel** (AEO), **Anthology** (AEC) | Each is internally consistent: Epic is simplest to build and debug; Parallel gives you async and observability without rollback complexity; Anthology is fully event-driven with the least coupling. |
 | **Common in practice** | **Fairy Tale** (SEO) | You _meant_ to build an Epic, but read consistency across services is expensive. Acknowledge you're building a Fairy Tale and don't fight it. |
 | **Use with caution** | **Fantasy** (AAO), **Phone Tag** (SAC), **Time Travel** (SEC) | Situational — Fantasy works when compensations are simple; Phone Tag and Time Travel suit simple two-party transactions. |
-| **Avoid** | **Horror** (AAC) | Implementing atomic rollback via choreographed events requires such entangled compensation logic that the coupling savings from choreography are negated. "You should have chosen something else." |
+| **Avoid** | **Horror** (AAC) | Atomic rollback via choreographed events needs compensation logic so entangled that the coupling savings from choreography are lost. |
 
 ---
 
