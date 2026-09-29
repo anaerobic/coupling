@@ -2,9 +2,8 @@
 
 > **"Let's decouple everything!" — Software engineers, anywhere, anytime**
 >
-> But is coupling necessarily evil? No. Coupling is what connects components, making
-> the value of a system greater than the sum of its parts. The goal isn't to eliminate
-> coupling — it's to **balance** it.
+> Coupling is what connects components and makes a system worth more than the sum of
+> its parts. The goal is to **balance** coupling, not eliminate it.
 
 ---
 
@@ -76,7 +75,7 @@ mindmap
       Abstractness
 ```
 
-**Coupling** is the degree of interdependence between software components. Any two components that interact are coupled. The question isn't _whether_ they are coupled — it's _how_ they are coupled.
+**Coupling** is the degree of interdependence between software components. Any two components that interact are coupled. The design question is _how_ they are coupled.
 
 ### ELI5: Coupling Is Like LEGO
 
@@ -97,7 +96,7 @@ mindmap
 
 Complexity is when you can't predict the outcome of a change. You make a tweak in one file, and three unrelated things break.
 
-**ELI5:** Complexity is like tweaking one ranking rule in a social feed: creators change what they post, users change what they click, and moderation patterns shift in unexpected ways. You can’t fully predict the outcome in advance—you run a small experiment, observe, then adapt.
+**ELI5:** Complexity is like tweaking one ranking rule in a social feed: creators change what they post, users change what they click, and moderation patterns shift in unexpected ways. You can’t fully predict the outcome in advance. You run a small experiment, observe, then adapt.
 
 Using the **Cynefin framework**:
 
@@ -145,8 +144,8 @@ BALANCE    = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY
 **Translation:**
 
 - **Modularity** happens when strength and distance are _opposites_ (one high, one low)
-- **Complexity** happens when they're _the same_ (both high = distributed monolith; both low = big ball of mud)
-- **Volatility** is the pragmatic tiebreaker — if something never changes, even tight coupling doesn't hurt much
+- **Complexity** happens when they're _the same_. Both high is a distributed monolith. Both low is unrelated components sitting together, which Khononov's own table labels "low cohesion" and which drifts toward a big ball of mud as their number grows. The binary `AND` above captures only the both-high case; the book's fuller model covers both.
+- **Volatility** is the pragmatic tiebreaker. If something never changes, even tight coupling doesn't hurt much
 
 ### ELI5: The Balance Analogy
 
@@ -159,7 +158,7 @@ BALANCE    = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY
 
 ### Connascence: A Complementary Vocabulary
 
-[Connascence](https://connascence.io) — from the Latin "born together" — is a taxonomy introduced by Meilir Page-Jones that classifies coupling at a finer granularity than traditional module coupling. Two components are _connascent_ if a change in one requires a corresponding change in the other. Where Khononov's integration strength model asks _how much knowledge_ is shared, connascence asks _what kind of knowledge_ and whether the dependency is visible at compile time or only at runtime.
+[Connascence](https://connascence.io), from the Latin "born together", is a taxonomy introduced by Meilir Page-Jones that classifies coupling at a finer granularity than traditional module coupling. Two components are _connascent_ if a change in one requires a corresponding change in the other. Where Khononov's integration strength model asks _how much knowledge_ is shared, connascence asks _what kind of knowledge_ and whether the dependency is visible at compile time or only at runtime.
 
 #### Static Connascence (compile-time)
 
@@ -186,53 +185,46 @@ Even the weakest dynamic level is stronger than the strongest static level:
 
 #### The Three Properties of Connascence
 
-Every instance of connascence should be evaluated on three axes — analogous to coupling's own dimensions:
+Every instance of connascence should be evaluated on three axes:
 
-1. **Strength** — how hard is it to discover and refactor? (Connascence of name is trivial to fix; connascence of identity can require architectural changes)
-2. **Locality** — are the connascent elements close together or far apart? (Same function vs. different services)
-3. **Degree** — how many components are involved? (Two classes vs. hundreds)
+1. **Strength**: how hard is it to discover and refactor? Connascence of name is trivial to fix; connascence of identity can require architectural changes.
+2. **Locality**: are the connascent elements close together or far apart? Same function vs. different services.
+3. **Degree**: how many components are involved? Two classes vs. hundreds.
 
-> These map directly to Khononov's framework: **Strength ≈ Integration Strength**, **Locality ≈ Distance**, **Degree ≈ Afferent Coupling (Ca)**.
+> Strength and locality line up with Khononov's integration strength and distance. Degree has no dimension of its own in his model; the nearest measure is afferent coupling (Ca), which counts dependents rather than participants.
 
 #### How Connascence Relates to Integration Strength
 
-Connascence and the [integration strength](coupling-dimensions.md#1-integration-strength) model describe different facets of the same phenomenon. Neither fully subsumes the other:
+The [integration strength](coupling-dimensions.md#1-integration-strength) model uses connascence as its second axis. The four levels come from structured design's module coupling and say _what kind_ of knowledge is shared. Connascence then grades the _degree_ within a level:
 
 ```mermaid
 flowchart LR
-    subgraph connascence ["Connascence"]
-        CoN["Name / Type"]
-        CoM["Meaning"]
-        CoA["Algorithm"]
-        CoP["Position"]
-        CoE["Execution / Timing"]
-        CoV["Value / Identity"]
-    end
+    Static["Static connascence<br/>Name → Type → Meaning → Algorithm → Position"]
+    Dynamic["Dynamic connascence<br/>Execution → Timing → Value → Identity"]
 
     subgraph strength ["Integration Strength"]
         Contract["🔵 Contract"]
         Model["🟢 Model"]
         Functional["🟠 Functional"]
-        Intrusive["🔴 Intrusive"]
+        Intrusive["🔴 Intrusive<br/>(no degrees: all knowledge assumed shared)"]
     end
 
-    CoN -.->|"often appears in"| Contract
-    CoM -.->|"often appears in"| Model
-    CoA -.->|"often appears in"| Functional
-    CoP -.->|"often appears in"| Contract
-    CoE -.->|"often appears in"| Functional
-    CoV -.->|"often appears in"| Intrusive
+    Static -.->|"grades the degree of"| Contract
+    Static -.->|"grades the degree of"| Model
+    Dynamic -.->|"grades some degrees of"| Functional
 ```
 
-> ⚠️ The mapping is **not** a 1:1 correspondence. As [Vlad Khononov notes](https://coupling.dev/posts/related-topics/connascence/), the two models reflect different aspects of cross-component relationships. Content coupling (reaching into private state) maps to the highest module coupling level, but only requires knowledge of a name and type — the _lowest_ connascence levels. The integration strength model resolves these blind spots by combining both perspectives.
+Two integrations can both be Contract coupling, yet one relies on positional arguments (connascence of position) and the other on named fields (connascence of name). The first is the stronger degree. Intrusive coupling has no degrees: once a component depends on another's private internals, all implementation knowledge is assumed shared.
+
+> ⚠️ Connascence and module coupling cannot be merged into one scale. As [Vlad Khononov notes](https://coupling.dev/posts/related-topics/connascence/), updating a private field through reflection is content coupling, the highest module coupling level, yet it requires only the variable's name and type, the _lowest_ connascence levels. Integration strength combines the two models and also covers a blind spot both share: the same functionality duplicated in several components.
 
 #### Practical Refactoring Rule
 
 > **Weaken connascence where you can, strengthen locality where you must.**
 >
-> If two components _must_ share knowledge, keep them close together (low distance). If they _must_ be far apart, reduce the type of knowledge they share — push from Position → Name, from Meaning → Type, from Algorithm → Contract.
+> If two components _must_ share knowledge, keep them close together (low distance). If they _must_ be far apart, weaken the connascence: Position → Name (named arguments), Meaning → Type (an enum instead of a magic number), Algorithm → Name (call one shared implementation instead of agreeing on the steps).
 
-👉 Look for connascence annotations (e.g., `// connascence of position →  name`) throughout the code examples in this guide — they highlight low-risk refactoring opportunities.
+👉 Look for connascence annotations (e.g., `// connascence of position →  name`) throughout the code examples in this guide. They mark low-risk refactoring opportunities.
 
 📖 _Further reading: [Connascence on coupling.dev](https://coupling.dev/posts/related-topics/connascence/) · [Meilir Page-Jones, "What Every Programmer Should Know About OOD"](https://amzn.to/4bYH66g) · [connascence.io](https://connascence.io)_
 
@@ -277,9 +269,9 @@ flowchart LR
 
 | Subdomain Type | Volatility | Why                                         |
 | -------------- | ---------- | ------------------------------------------- |
-| **Core**       | 🔴 High    | Competitive advantage — constantly evolving |
-| **Supporting** | 🟡 Medium  | Boring problems — changes occasionally      |
-| **Generic**    | 🟢 Low     | Solved problems — rarely changes            |
+| **Core**       | 🔴 High    | Competitive advantage, constantly evolving     |
+| **Supporting** | 🟢 Low     | Boring problems, built in-house, rarely change |
+| **Generic**    | 🟢 Low     | Solved problems, bought or adopted             |
 
 👉 [Deep dive with code examples →](coupling-dimensions.md#3-volatility)
 
